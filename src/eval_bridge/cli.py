@@ -15,6 +15,7 @@ from rich.table import Table
 from . import __version__
 from .config import load_config
 from .fixture import Fixture, load_fixture, load_fixture_dir
+from .mutator import mutate_fixture
 from .runner import Runner
 from .scrubber import Scrubber, find_residual_secrets
 
@@ -65,12 +66,17 @@ def main() -> None:
               default=None, help="Where to write the fixture (JSON or YAML).")
 @click.option("--dry-run/--write", default=True,
               help="Dry-run prints the scrubbed fixture to stdout; --write saves it.")
+@click.option("--mutate", "mutate_n", type=int, default=0,
+              help="Generate N adversarial variants per fixture (entity swap, typo, "
+                   "reorder, synonym). Each variant is written alongside the base "
+                   "fixture with a `.mN` suffix in its trace_id.")
 @click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
               default=None, help="Path to eval-bridge.toml.")
 def capture(
     input_path: Path,
     output: Path | None,
     dry_run: bool,
+    mutate_n: int,
     config: Path | None,
 ) -> None:
     """Capture an incident and emit a scrubbed eval fixture."""
@@ -97,10 +103,32 @@ def capture(
     if dry_run:
         click.echo(f"# dry-run: would write scrubbed fixture to {out}")
         click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        if mutate_n > 0:
+            for v in mutate_fixture(fixture, n=mutate_n, seed=0):
+                vp = v.to_dict()
+                vp["scrubber_counts"] = list(
+                    scrubber.scrub(json.dumps(v.to_dict())).counts.items()
+                )
+                click.echo()
+                click.echo(f"# variant {v.trace_id}:")
+                click.echo(json.dumps(vp, indent=2, ensure_ascii=False))
         return
 
     _write_any(out, payload)
     click.echo(f"wrote {out}  (scrubber matches: {payload['scrubber_counts']})")
+
+    if mutate_n > 0:
+        # Variants land as siblings of the base fixture. Re-use the base
+        # file's stem so the family is visually grouped in the fixtures
+        # directory.
+        for v in mutate_fixture(fixture, n=mutate_n, seed=0):
+            vp = v.to_dict()
+            vp["scrubber_counts"] = list(
+                scrubber.scrub(json.dumps(v.to_dict())).counts.items()
+            )
+            v_out = out.with_name(f"{out.stem}.{v.trace_id.split('.')[-1]}{out.suffix}")
+            _write_any(v_out, vp)
+            click.echo(f"wrote {v_out}  (variant {v.trace_id})")
 
 
 # ---------------------------------------------------------------------------

@@ -59,9 +59,58 @@ def test_capture_writes_yaml_when_extension_is_yaml(runner: CliRunner, tmp_path:
     }))
     out = tmp_path / "fx.yaml"
     result = runner.invoke(main, ["capture", str(incident), "--output", str(out), "--write"])
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     payload = yaml.safe_load(out.read_text())
     assert payload["trace_id"] == "tr-1"
+
+
+def test_capture_with_mutate_writes_variants(runner: CliRunner, tmp_path: Path):
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({
+        "trace_id": "tr-mut",
+        "prompt": "Summarize the Q3 sales report for Jane Doe on 2025-09-12.",
+    }))
+    out = tmp_path / "fx.json"
+    result = runner.invoke(main, [
+        "capture", str(incident),
+        "--output", str(out), "--write", "--mutate", "3",
+    ])
+    assert result.exit_code == 0, result.output
+    # Base fixture present.
+    assert out.exists()
+    # Three variants present with the .mN suffix.
+    for n in (1, 2, 3):
+        variant = tmp_path / f"fx.m{n}.json"
+        assert variant.exists(), f"missing variant {variant}"
+        payload = json.loads(variant.read_text())
+        assert payload["trace_id"] == f"tr-mut.m{n}"
+        # Variant trace_ids carry the mN suffix; the base prompt content
+        # is replaced by the mutator.
+        assert payload["prompt"]
+    # stdout must mention each variant file.
+    for n in (1, 2, 3):
+        assert f"fx.m{n}.json" in result.stdout
+
+
+def test_capture_with_mutate_dry_run_does_not_write(runner: CliRunner, tmp_path: Path):
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({
+        "trace_id": "tr-mut-dry",
+        "prompt": "Summarize the report.",
+    }))
+    out = tmp_path / "fx.json"
+    # Default mode is --dry-run.
+    result = runner.invoke(main, [
+        "capture", str(incident),
+        "--output", str(out), "--mutate", "2",
+    ])
+    assert result.exit_code == 0, result.output
+    # No files written.
+    assert not out.exists()
+    assert not (tmp_path / "fx.m1.json").exists()
+    # stdout shows the variants.
+    assert "tr-mut-dry.m1" in result.stdout
+    assert "tr-mut-dry.m2" in result.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -148,4 +197,4 @@ def test_doctor_runs(runner: CliRunner):
 def test_version(runner: CliRunner):
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.0" in result.stdout
+    assert "0.2.0" in result.stdout

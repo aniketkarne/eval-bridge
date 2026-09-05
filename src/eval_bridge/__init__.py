@@ -24,6 +24,7 @@ from .scrubber import (
     find_residual_secrets,
 )
 from .config import Config, load_config
+from .mutator import mutate_fixture
 from .provider import (
     FixtureProvider,
     OpenAICompatProvider,
@@ -57,7 +58,8 @@ __all__ = [
     "load_config",
     "load_fixture",
     "load_fixture_dir",
+    "mutate_fixture",
     "provider_from_config",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

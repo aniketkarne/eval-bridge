@@ -87,6 +87,15 @@ eval-bridge run tests/fixtures --junit junit.xml
 cat junit.xml   # <testsuite tests="1" failures="0"/>
 ```
 
+### 4. (optional) Generate adversarial variants
+
+```bash
+eval-bridge capture incident.json --output tests/fixtures/tr-001.json --write --mutate 5
+# writes tr-001.json plus tr-001.m1.json .. tr-001.m5.json
+# each variant mutates names/dates/numbers, injects typos, reorders clauses,
+# or swaps synonyms — catching prompt overfit on the exact captured wording
+```
+
 ## Demo
 
 Real output from this repo's own smoke fixtures. Every command below exits 0
@@ -198,10 +207,68 @@ semantic_threshold  = 0.0          # 0..1 Jaccard baseline
 ## CLI
 
 ```
-eval-bridge capture <input>      [--output PATH] [--dry-run]
+eval-bridge capture <input>      [--output PATH] [--dry-run] [--mutate N]
 eval-bridge run <fixtures_dir>   [--junit PATH] [--provider fixture|openai_compat]
 eval-bridge scrub <input>        [--output PATH]    # scrub without writing fixture
 eval-bridge doctor               # show config + detect scrubber coverage
+```
+
+## Counterfactual mutation
+
+Passing `--mutate N` to `capture` generates N adversarial variants of the
+captured fixture. The goal is to catch **prompt overfitting**: a developer
+who patches the system prompt to pass the exact captured wording will still
+fail on a synonym or reordered variant until the underlying principle is
+fixed.
+
+Four deterministic, dependency-free perturbation families (round-robin across
+the N slots, all reproducible via `--seed` on the Python API):
+
+- **Entity swap** — names, dates, and numbers become `[NAME_1]`, `[DATE_1]`,
+  `[NUM_1]` placeholders. Preserves sentence structure.
+- **Typo & casing** — adjacent-character transposition or dropped letter.
+  Models mobile-keyboard errors. Protected against mutating short common
+  words (`the`, `and`, `you`, ...).
+- **Reorder** — shuffles comma/semicolon-separated clauses. Preserves the
+  opening clause. For multi-turn fixtures, also shuffles non-system
+  messages.
+- **Synonym** — swaps a small built-in lookup (`summarize` ↔ `condense`,
+  `explain` ↔ `describe`, etc.). Tiny table on purpose: bigger tables drift
+  out of date and noisier mutations hurt more than they help.
+
+Variants drop the original `expected_substrings` (those pinned the exact
+wording) but keep `forbidden_substrings`, `schema`, `reference_reply`, and
+`capture` metadata.
+
+Real output from `eval-bridge capture incident.json --write --mutate 4`:
+
+```
+wrote base.json       (scrubber matches: [])
+wrote base.m1.json    (variant demo-mut.m1)
+wrote base.m2.json    (variant demo-mut.m2)
+wrote base.m3.json    (variant demo-mut.m3)
+wrote base.m4.json    (variant demo-mut.m4)
+```
+
+Inspecting the four variants on a single input
+(`Summarize the Q3 sales report for Jane Doe filed on 2025-09-12.`):
+
+| Variant   | Family   | Prompt                                                              |
+|-----------|----------|---------------------------------------------------------------------|
+| `base.m1` | entity   | `[NAME_1] the Q3 sales report for [NAME_2] filed on [DATE_1].`       |
+| `base.m2` | typo     | `Summarize the Q3 sales report for Jae Doe filed on 2025-09-12.`    |
+| `base.m3` | reorder  | `Summarize the Q3 sales report for Jane Doe filed on 2025-09-12.`   |
+| `base.m4` | synonym  | `Condense the Q3 sales report for Jane Doe filed on 2025-09-12.`    |
+
+Programmatic API:
+
+```python
+from eval_bridge import Fixture, mutate_fixture
+
+fx = Fixture(trace_id="t-1", prompt="Summarize Q3 for Jane Doe.")
+variants = mutate_fixture(fx, n=8, seed=42)  # reproducible
+# or restrict to one family:
+variants = mutate_fixture(fx, n=4, families=("entity", "synonym"))
 ```
 
 ## Programmatic SDK
@@ -248,6 +315,11 @@ pytest -q
   eval-bridge is replayability — fixtures are scrubbed and pinned. If your
   model is non-deterministic, the harness surfaces that as flaky CI; the
   fixture itself does not change.
+- **Mutations are local heuristics, not adversarial ML.** The mutator uses a
+  four-family rule set (entity swap, typo, reorder, synonym). It catches
+  overfit on the specific captured wording but is not a substitute for
+  paraphrasing models or red-team generation. Pair with an LLM-driven
+  adversarial generator if you need coverage of less obvious rewordings.
 
 ## License
 
