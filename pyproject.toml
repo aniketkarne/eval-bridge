@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eval-bridge"
+version = "0.1.0"
+description = "Capture LLM failures, deterministic PII scrubbing, offline-first eval runner with JUnit XML"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Aniket Karne", email = "aniket@karne.ai"},
+]
+keywords = ["llm", "evaluation", "pii", "scrubber", "junit", "openai"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "jsonschema>=4.21",
+    "httpx>=0.27",
+    "click>=8.1",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "responses>=0.25",
+]
+
+[project.scripts]
+eval-bridge = "eval_bridge.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/aniketkarne-com/eval-bridge"
+Repository = "https://github.com/aniketkarne-com/eval-bridge"
+Issues = "https://github.com/aniketkarne-com/eval-bridge/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"eval_bridge" = ["py.typed", "schemas/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+pythonpath = ["src"]

@@ -1,0 +1,12 @@
+{
+  "trace_id": "smoke-greeting",
+  "prompt": "Say hello briefly",
+  "model": "gpt-4o-mini",
+  "fixture_response": "Hello!",
+  "expected_substrings": ["Hello"],
+  "forbidden_substrings": ["BEGIN PRIVATE KEY"],
+  "capture": {
+    "captured_at": "2026-09-04T00:00:00Z",
+    "source": "ci-fixture"
+  }
+}

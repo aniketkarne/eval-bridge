@@ -1,0 +1,254 @@
+# eval-bridge
+
+> Capture LLM failures, scrub PII deterministically, and replay them offline as
+> reproducible eval fixtures with JUnit XML output.
+
+```
++-----------------------------+
+|   Your LLM App / Production |
++-----------------------------+
+              |
+              |  failures, bad answers, user complaints
+              v
++-----------------------------+
+|  eval-bridge capture        |
+|  - ingest JSON / YAML       |
+|  - scrub PII (deterministic)|
+|  - assert safety invariants |
++-----------------------------+
+              |
+              v
++-----------------------------+
+|  Fixtures (JSON / YAML)     |
+|  tests/fixtures/*.json      |
++-----------------------------+
+              |
+              v
++-----------------------------+
+|  eval-bridge runner         |
+|  - offline fixture mode     |
+|  - OpenAI-compatible HTTP   |
+|  - semantic/lexical asserts |
+|  - JUnit XML report         |
++-----------------------------+
+```
+
+## Why
+
+- **Capture once, replay forever.** A failed production trace becomes a fixture
+  that runs in CI with no live LLM calls.
+- **No secrets in version control.** Every capture passes through a deterministic
+  PII scrubber (emails, IPs, JWTs, API tokens, credit cards, SSNs, custom regexes)
+  before it lands on disk.
+- **Pluggable providers.** Use offline fixtures for hermetic CI, or any
+  OpenAI-compatible HTTP endpoint for live regression sweeps.
+- **CI-friendly.** Emits JUnit XML that GitHub Actions, GitLab, and Jenkins consume
+  natively, plus a residual-secret scan that fails the run if anything sensitive
+  leaks through.
+
+## 3-step quickstart
+
+### 1. Install
+
+```bash
+pip install eval-bridge
+# or, from a clone:
+pip install -e ".[dev]"
+```
+
+### 2. Capture a failure and write a fixture
+
+Create `incident.json`:
+
+```json
+{
+  "trace_id": "tr-001",
+  "prompt": "My email is jane.doe@example.com and my card is 4111 1111 1111 1111",
+  "expected_substrings": ["@example.com"],
+  "capture": {
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "system", "content": "You redact PII."},
+      {"role": "user", "content": "My email is jane.doe@example.com and my card is 4111 1111 1111 1111"}
+    ]
+  }
+}
+```
+
+```bash
+eval-bridge capture incident.json --output tests/fixtures/tr-001.json --dry-run
+# dry-run prints what would be written; drop --dry-run to write
+```
+
+### 3. Run the eval
+
+```bash
+eval-bridge run tests/fixtures --junit junit.xml
+cat junit.xml   # <testsuite tests="1" failures="0"/>
+```
+
+## Demo
+
+Real output from this repo's own smoke fixtures. Every command below exits 0
+and writes the artifacts shown.
+
+`eval-bridge doctor` — inspects the active scrubber config and runs a sample
+through it to confirm coverage:
+
+```
+scrubber config        
+┏━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃             ┃               ┃
+┡━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ email       │ {email}       │
+│ ip          │ {ip}          │
+│ jwt         │ {jwt}         │
+│ api_token   │ {api_token}   │
+│ bearer      │ {api_token}   │
+│ credit_card │ {credit_card} │
+│ ssn         │ {ssn}         │
+└─────────────┴───────────────┘
+scrubber sample output:
+ping {email} from {ip}, card {credit_card}, jwt {jwt}, ssn {ssn}, token
+{api_token}, auth: Bearer {api_token}
+counts: {'email': 1, 'ipv4': 1, 'ssn': 1, 'jwt': 1, 'bearer': 2, 'credit_card':
+1}
+residual secret scan: OK
+```
+
+`eval-bridge run tests/fixtures --junit junit.xml --no-exit-on-fail` — runs the
+three bundled smoke fixtures against the offline provider and emits a JUnit
+report:
+
+```
+eval-bridge report                    
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
+┃ trace_id       ┃ status ┃ duration ┃ failing assertion ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
+│ smoke-greeting │ PASS   │   0.000s │                   │
+│ smoke-pii      │ PASS   │   0.000s │                   │
+│ smoke-schema   │ PASS   │   0.000s │                   │
+└────────────────┴────────┴──────────┴───────────────────┘
+total=3 passed=3 failed=0 duration=0.000s
+junit: junit.xml
+```
+
+First lines of the generated `junit.xml`:
+
+```xml
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="eval-bridge" tests="3" failures="0" errors="0" skipped="0" time="0.000" timestamp="2026-09-05T14:30:40" id="5c44783e-b3db-4e9a-be96-72af1400af95"><testcase classname="eval-bridge.smoke-greeting" name="smoke-greeting" time="0.000"><system-out>Hello!</system-out></testcase><testcase classname="eval-bridge.smoke-pii" name="smoke-pii" time="0.000"><system-out>Redacted: {email}, token {api_token}</system-out></testcase><testcase classname="eval-bridge.smoke-schema" name="smoke-schema" time="0.000"><system-out>{"answer": 42}</system-out></testcase></testsuite>
+```
+
+`eval-bridge capture` — feeds a realistic incident (email + IPv4 + Visa + JWT)
+through the scrubber and writes a fixture. Note that `jane.doe@example.com`,
+`10.0.0.1`, `4111 1111 1111 1111`, and the JWT are all replaced with their
+respective `{placeholder}` tokens:
+
+```bash
+$ eval-bridge capture /tmp/incident.json --output /tmp/demo-pii.json --write
+wrote /tmp/demo-pii.json  (scrubber matches: [('email', 1), ('ipv4', 1), ('jwt', 1), ('credit_card', 1)])
+```
+
+The scrubbed fixture on disk:
+
+```json
+{
+  "trace_id": "demo-pii",
+  "prompt": "Contact {email} from {ip}, card {credit_card}, JWT {jwt}",
+  "model": "gpt-4o-mini",
+  "fixture_response": null,
+  "scrubber_counts": [["email", 1], ["ipv4", 1], ["jwt", 1], ["credit_card", 1]]
+}
+```
+
+## Configuration
+
+`eval-bridge` reads `eval-bridge.toml` (optional) from the current directory:
+
+```toml
+[scrubber]
+# Replacement tokens for each detected class. Use {placeholder} tokens when you
+# want a stable, non-reversible label; any literal string is also accepted.
+email       = "{email}"
+ip          = "{ip}"
+jwt         = "{jwt}"
+api_token   = "{api_token}"
+credit_card = "{credit_card}"
+ssn         = "{ssn}"
+
+# Extra regexes you want scrubbed. Each pattern is applied in order.
+extra_patterns = [
+  { name = "internal_ticket", pattern = "TICKET-\\d{4,}", replacement = "{ticket}" },
+]
+
+[runner]
+provider   = "fixture"            # "fixture" | "openai_compat"
+base_url   = "https://api.openai.com/v1"
+model      = "gpt-4o-mini"
+timeout_s  = 30
+max_retries = 2
+
+[runner.assertions]
+schema_path         = ""           # optional JSON Schema for responses
+forbidden_substrings = ["BEGIN PRIVATE KEY"]
+semantic_threshold  = 0.0          # 0..1 Jaccard baseline
+```
+
+## CLI
+
+```
+eval-bridge capture <input>      [--output PATH] [--dry-run]
+eval-bridge run <fixtures_dir>   [--junit PATH] [--provider fixture|openai_compat]
+eval-bridge scrub <input>        [--output PATH]    # scrub without writing fixture
+eval-bridge doctor               # show config + detect scrubber coverage
+```
+
+## Programmatic SDK
+
+```python
+from eval_bridge import Scrubber, Fixture, Runner
+
+# Scrub PII
+scrubber = Scrubber.from_default_config()
+clean = scrubber.scrub("ping jane@example.com from 10.0.0.1")
+# -> "ping {email} from {ip}"
+
+# Run offline
+runner = Runner.from_config()
+report = runner.run_dir("tests/fixtures")
+report.write_junit("junit.xml")
+```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest -q
+```
+
+## Limitations
+
+- **Lexical Jaccard, not embeddings.** The semantic-threshold assertion is a
+  word-token Jaccard similarity against `reference_reply`. It is fast and
+  deterministic, but insensitive to paraphrase and word-order changes. If you
+  need paraphrase robustness, swap in an embedding similarity at the call site
+  and treat eval-bridge's threshold as a cheap pre-filter.
+- **Default PII patterns cover common cases.** Built-ins target email, IPv4/IPv6,
+  JWTs, common API-key prefixes (OpenAI, GitHub, Slack, AWS, Google), Bearer
+  auth headers, Luhn-valid credit cards, and US SSNs. Org-specific identifiers
+  (internal ticket IDs, account numbers, internal hostnames) must be added via
+  `extra_patterns` in `eval-bridge.toml`. Set a category's replacement to `""`
+  in TOML to disable that class entirely.
+- **OpenAI-compatible provider retries on 5xx only.** 4xx errors fail fast —
+  there is no point retrying client errors. Network errors and 5xx responses
+  are retried up to `max_retries` times with no backoff; tune `max_retries`
+  in config if your endpoint rate-limits aggressively.
+- **Deterministic fixtures capture deterministic behavior.** The whole point of
+  eval-bridge is replayability — fixtures are scrubbed and pinned. If your
+  model is non-deterministic, the harness surfaces that as flaky CI; the
+  fixture itself does not change.
+
+## License
+
+MIT © Aniket Karne

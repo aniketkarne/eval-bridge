@@ -1,0 +1,26 @@
+# eval-bridge configuration. All fields are optional.
+
+[scrubber]
+email       = "{email}"
+ip          = "{ip}"
+jwt         = "{jwt}"
+api_token   = "{api_token}"
+bearer      = "{api_token}"
+credit_card = "{credit_card}"
+ssn         = "{ssn}"
+
+# extra_patterns = [
+#   { name = "internal_ticket", pattern = "TICKET-\\d{4,}", replacement = "{ticket}" },
+# ]
+
+[runner]
+provider   = "fixture"
+base_url   = "https://api.openai.com/v1"
+model      = "gpt-4o-mini"
+timeout_s  = 30
+max_retries = 2
+
+[runner.assertions]
+forbidden_substrings    = ["BEGIN PRIVATE KEY"]
+semantic_threshold      = 0.0
+residual_secret_scan    = true

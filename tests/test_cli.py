@@ -1,0 +1,151 @@
+"""Tests for the CLI."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from click.testing import CliRunner
+
+from eval_bridge.cli import main
+
+
+@pytest.fixture
+def runner() -> CliRunner:
+    # click 8.2+ removed `mix_stderr`; stdout/stderr are captured separately.
+    return CliRunner()
+
+
+# ---------------------------------------------------------------------------
+# capture
+# ---------------------------------------------------------------------------
+
+def test_capture_dry_run_prints_scrubbed_json(runner: CliRunner, tmp_path: Path, capsys):
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({
+        "trace_id": "tr-1",
+        "prompt": "contact jane@example.com",
+    }))
+    result = runner.invoke(main, ["capture", str(incident)])
+    assert result.exit_code == 0, result.stdout
+    # dry-run writes the fixture to stdout, not a file
+    assert "{email}" in result.stdout
+    # confirm it did NOT create a file on disk under tests/fixtures
+    assert not (Path.cwd() / "tests" / "fixtures" / "tr-1.json").exists()
+
+
+def test_capture_writes_file(runner: CliRunner, tmp_path: Path):
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({
+        "trace_id": "tr-1",
+        "prompt": "ping jane@example.com",
+    }))
+    out = tmp_path / "fx.json"
+    result = runner.invoke(main, ["capture", str(incident), "--output", str(out), "--write"])
+    assert result.exit_code == 0, result.stdout
+    assert out.exists()
+    payload = json.loads(out.read_text())
+    assert payload["trace_id"] == "tr-1"
+    assert "{email}" in payload["prompt"]
+
+
+def test_capture_writes_yaml_when_extension_is_yaml(runner: CliRunner, tmp_path: Path):
+    import yaml
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({
+        "trace_id": "tr-1",
+        "prompt": "ping jane@example.com",
+    }))
+    out = tmp_path / "fx.yaml"
+    result = runner.invoke(main, ["capture", str(incident), "--output", str(out), "--write"])
+    assert result.exit_code == 0, result.stdout
+    payload = yaml.safe_load(out.read_text())
+    assert payload["trace_id"] == "tr-1"
+
+
+# ---------------------------------------------------------------------------
+# run
+# ---------------------------------------------------------------------------
+
+def test_run_emits_junit_and_summary(runner: CliRunner, tmp_path: Path):
+    fixtures = tmp_path / "fx"
+    fixtures.mkdir()
+    (fixtures / "a.json").write_text(json.dumps({
+        "trace_id": "a", "prompt": "hi", "fixture_response": "ok",
+    }))
+    junit = tmp_path / "junit.xml"
+    result = runner.invoke(main, [
+        "run", str(fixtures), "--junit", str(junit), "--no-exit-on-fail",
+    ])
+    assert result.exit_code == 0, result.stdout
+    assert junit.exists()
+    assert "passed=1" in result.stdout
+
+
+def test_run_exits_nonzero_on_failure(runner: CliRunner, tmp_path: Path):
+    fixtures = tmp_path / "fx"
+    fixtures.mkdir()
+    (fixtures / "bad.json").write_text(json.dumps({
+        "trace_id": "bad",
+        "prompt": "hi",
+        "fixture_response": "x",
+        "expected_substrings": ["y"],
+    }))
+    junit = tmp_path / "junit.xml"
+    result = runner.invoke(main, ["run", str(fixtures), "--junit", str(junit)])
+    assert result.exit_code == 1
+
+
+# ---------------------------------------------------------------------------
+# scrub
+# ---------------------------------------------------------------------------
+
+def test_scrub_prints_to_stdout(runner: CliRunner, tmp_path: Path):
+    f = tmp_path / "in.txt"
+    f.write_text("contact jane@example.com")
+    result = runner.invoke(main, ["scrub", str(f), "--no-residual-scan"])
+    assert result.exit_code == 0, result.stdout
+    assert "{email}" in result.stdout
+
+
+def test_scrub_writes_to_file(runner: CliRunner, tmp_path: Path):
+    f = tmp_path / "in.txt"
+    f.write_text("contact jane@example.com")
+    out = tmp_path / "clean.txt"
+    result = runner.invoke(main, [
+        "scrub", str(f), "--output", str(out), "--no-residual-scan"
+    ])
+    assert result.exit_code == 0, result.stdout
+    assert "{email}" in out.read_text()
+
+
+def test_scrub_residual_scan_fails_on_leak(runner: CliRunner, tmp_path: Path):
+    # The scrubber's default config scrubs emails, but a contrived input that
+    # the scrubber is configured NOT to scrub (via config) should still trigger
+    # the residual scan. We use a custom config that disables email scrubbing
+    # by setting the replacement to an empty string.
+    cfg = tmp_path / "eval-bridge.toml"
+    cfg.write_text('[scrubber]\nemail = ""\n')
+    f = tmp_path / "in.txt"
+    f.write_text("contact jane@example.com")
+    result = runner.invoke(main, ["scrub", str(f), "-c", str(cfg)])
+    assert result.exit_code == 2
+    assert "residual" in result.stderr.lower()
+
+
+# ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+def test_doctor_runs(runner: CliRunner):
+    result = runner.invoke(main, ["doctor"])
+    assert result.exit_code == 0, result.stdout
+    assert "scrubber config" in result.stdout
+    assert "OK" in result.stdout
+
+
+def test_version(runner: CliRunner):
+    result = runner.invoke(main, ["--version"])
+    assert result.exit_code == 0
+    assert "0.1.0" in result.stdout

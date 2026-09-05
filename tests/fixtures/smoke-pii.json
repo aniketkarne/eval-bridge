@@ -1,0 +1,11 @@
+{
+  "trace_id": "smoke-pii",
+  "prompt": "Redact the email and token from: contact jane@example.com, token ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+  "model": "gpt-4o-mini",
+  "fixture_response": "Redacted: {email}, token {api_token}",
+  "expected_substrings": ["Redacted"],
+  "capture": {
+    "captured_at": "2026-09-04T00:00:00Z",
+    "source": "ci-fixture"
+  }
+}

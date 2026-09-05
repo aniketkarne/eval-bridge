@@ -1,0 +1,18 @@
+{
+  "trace_id": "smoke-schema",
+  "prompt": "Return JSON with an integer field 'answer' set to 42",
+  "model": "gpt-4o-mini",
+  "fixture_response": "{\"answer\": 42}",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "answer": {"type": "integer"}
+    },
+    "required": ["answer"],
+    "additionalProperties": false
+  },
+  "capture": {
+    "captured_at": "2026-09-04T00:00:00Z",
+    "source": "ci-fixture"
+  }
+}

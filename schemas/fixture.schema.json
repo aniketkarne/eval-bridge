@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "eval-bridge fixture",
+  "type": "object",
+  "required": ["trace_id", "prompt"],
+  "properties": {
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for this fixture."
+    },
+    "prompt": {
+      "type": "string",
+      "description": "User prompt to send to the model."
+    },
+    "system": {
+      "type": ["string", "null"],
+      "description": "Optional system message."
+    },
+    "messages": {
+      "type": "array",
+      "description": "Optional full chat history (overrides prompt/system).",
+      "items": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": {"type": "string", "enum": ["system", "user", "assistant"]},
+          "content": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "model": {
+      "type": ["string", "null"],
+      "description": "Model name passed to the provider."
+    },
+    "expected_substrings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Strings that must appear in the model's reply."
+    },
+    "forbidden_substrings": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Strings that must NOT appear in the model's reply."
+    },
+    "schema": {
+      "type": ["object", "null"],
+      "description": "Optional JSON Schema the model's reply must conform to."
+    },
+    "semantic_threshold": {
+      "type": ["number", "null"],
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Minimum Jaccard similarity vs. reference_reply (if provided)."
+    },
+    "reference_reply": {
+      "type": ["string", "null"],
+      "description": "Reference text used to compute semantic_threshold."
+    },
+    "capture": {
+      "type": "object",
+      "description": "Free-form metadata about the original capture."
+    },
+    "fixture_response": {
+      "type": ["string", "null"],
+      "description": "Optional canned response for offline (fixture) provider."
+    }
+  },
+  "additionalProperties": true
+}

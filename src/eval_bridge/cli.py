@@ -1,0 +1,243 @@
+"""Command-line interface for eval-bridge."""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import click
+import yaml
+from rich.console import Console
+from rich.table import Table
+
+from . import __version__
+from .config import load_config
+from .fixture import Fixture, load_fixture, load_fixture_dir
+from .runner import Runner
+from .scrubber import Scrubber, find_residual_secrets
+
+console = Console()
+err_console = Console(stderr=True)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _read_any(path: Path) -> dict[str, Any]:
+    raw = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        loaded = yaml.safe_load(raw)
+    else:
+        loaded = json.loads(raw)
+    if not isinstance(loaded, dict):
+        raise click.ClickException(f"{path}: expected a JSON object at top level")
+    return loaded
+
+
+def _write_any(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    else:
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Root group
+# ---------------------------------------------------------------------------
+
+@click.group()
+@click.version_option(__version__, prog_name="eval-bridge")
+def main() -> None:
+    """Capture LLM failures, deterministic PII scrubbing, offline eval runner."""
+
+
+# ---------------------------------------------------------------------------
+# capture
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.argument("input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Where to write the fixture (JSON or YAML).")
+@click.option("--dry-run/--write", default=True,
+              help="Dry-run prints the scrubbed fixture to stdout; --write saves it.")
+@click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Path to eval-bridge.toml.")
+def capture(
+    input_path: Path,
+    output: Path | None,
+    dry_run: bool,
+    config: Path | None,
+) -> None:
+    """Capture an incident and emit a scrubbed eval fixture."""
+    cfg = load_config(config) if config else load_config()
+    scrubber = Scrubber(cfg.scrubber)
+    data = _read_any(input_path)
+
+    # Scrub every string leaf in the incident doc.
+    scrubbed = scrubber.scrub_mapping(data)
+
+    # Build a fixture (may be missing some fields; from_dict validates).
+    fixture = Fixture.from_dict(scrubbed)
+    fixture.validate()
+
+    # Default output path
+    if output is None:
+        out = Path("tests/fixtures") / f"{fixture.trace_id}.json"
+    else:
+        out = output
+
+    payload = fixture.to_dict()
+    payload["scrubber_counts"] = list(scrubber.scrub(json.dumps(data)).counts.items())
+
+    if dry_run:
+        click.echo(f"# dry-run: would write scrubbed fixture to {out}")
+        click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    _write_any(out, payload)
+    click.echo(f"wrote {out}  (scrubber matches: {payload['scrubber_counts']})")
+
+
+# ---------------------------------------------------------------------------
+# run
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.argument("fixtures_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--junit", type=click.Path(dir_okay=False, path_type=Path), default=None,
+              help="Write a JUnit XML report to this path.")
+@click.option("--provider", type=click.Choice(["fixture", "openai_compat"]),
+              default=None, help="Override provider from config.")
+@click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Path to eval-bridge.toml.")
+@click.option("--exit-on-fail/--no-exit-on-fail", default=True,
+              help="Exit with non-zero status if any case fails.")
+def run(
+    fixtures_dir: Path,
+    junit: Path | None,
+    provider: str | None,
+    config: Path | None,
+    exit_on_fail: bool,
+) -> None:
+    """Run fixtures and emit a JUnit XML report."""
+    cfg = load_config(config) if config else load_config()
+    if provider is not None:
+        cfg.runner.provider = provider
+
+    runner = Runner(config=cfg.runner, scrubber=Scrubber(cfg.scrubber))
+    report = runner.run_dir(fixtures_dir)
+
+    # Pretty stdout summary
+    table = Table(title="eval-bridge report")
+    table.add_column("trace_id", style="bold")
+    table.add_column("status")
+    table.add_column("duration", justify="right")
+    table.add_column("failing assertion")
+    for r in report.results:
+        failing = next((a.name for a in r.assertions if not a.passed), "")
+        table.add_row(
+            r.trace_id,
+            "PASS" if r.passed else "FAIL",
+            f"{r.duration_s:.3f}s",
+            failing,
+        )
+    console.print(table)
+    console.print(
+        f"[bold]total={report.total} passed={report.passed} "
+        f"failed={report.failed} duration={report.duration_s:.3f}s[/bold]"
+    )
+
+    if junit is not None:
+        path = report.write_junit(junit)
+        console.print(f"junit: {path}")
+
+    if exit_on_fail and report.failed > 0:
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# scrub
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.argument("input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Write scrubbed content here (defaults to stdout).")
+@click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Path to eval-bridge.toml.")
+@click.option("--residual-scan/--no-residual-scan", default=True,
+              help="After scrubbing, run a residual-secret scan and fail if anything leaks.")
+def scrub(
+    input_path: Path,
+    output: Path | None,
+    config: Path | None,
+    residual_scan: bool,
+) -> None:
+    """Scrub PII from a file (YAML/JSON/Text) without turning it into a fixture."""
+    cfg = load_config(config) if config else load_config()
+    scrubber = Scrubber(cfg.scrubber)
+    raw = input_path.read_text(encoding="utf-8")
+    result = scrubber.scrub(raw)
+
+    if output is None:
+        click.echo(result.text)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(result.text, encoding="utf-8")
+        click.echo(f"wrote {output}  (matches: {dict(result.counts)})")
+
+    if residual_scan:
+        leaks = find_residual_secrets(result.text)
+        if leaks:
+            err_console.print(
+                f"[red]residual secret scan failed: {len(leaks)} leak(s)[/red]"
+            )
+            for leak in leaks:
+                err_console.print(f"  {leak['name']} -> {leak['value']!r}")
+            sys.exit(2)
+
+
+# ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+@main.command()
+@click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Path to eval-bridge.toml.")
+def doctor(config: Path | None) -> None:
+    """Show config + detect scrubber coverage on a synthetic sample."""
+    cfg = load_config(config) if config else load_config()
+
+    table = Table(title="scrubber config")
+    for field_name in ("email", "ip", "jwt", "api_token", "bearer", "credit_card", "ssn"):
+        table.add_row(field_name, getattr(cfg.scrubber, field_name))
+    console.print(table)
+
+    scrubber = Scrubber(cfg.scrubber)
+    sample = (
+        "ping jane.doe@example.com from 10.0.0.1, "
+        "card 4111 1111 1111 1111, "
+        "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature, "
+        "ssn 123-45-6789, "
+        "token ghp_abcdef0123456789abcdef, "
+        "auth: Bearer abcdefghijklmnopqrstuvwxyz012345"
+    )
+    res = scrubber.scrub(sample)
+    console.print("[bold]scrubber sample output:[/bold]")
+    console.print(res.text)
+    console.print(f"[bold]counts:[/bold] {dict(res.counts)}")
+
+    leaks = find_residual_secrets(res.text)
+    if leaks:
+        err_console.print(f"[red]residual leaks: {leaks}[/red]")
+        sys.exit(2)
+    console.print("[green]residual secret scan: OK[/green]")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()
