@@ -46,6 +46,9 @@ class Fixture:
     reference_reply: str | None = None
     capture: dict[str, Any] = field(default_factory=dict)
     fixture_response: str | None = None
+    context: str | None = None
+    judge_criteria: str | None = None
+    judge_scorers: list[str] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -85,6 +88,9 @@ class Fixture:
             reference_reply=data.get("reference_reply"),
             capture=dict(data.get("capture") or {}),
             fixture_response=data.get("fixture_response"),
+            context=data.get("context"),
+            judge_criteria=data.get("judge_criteria"),
+            judge_scorers=list(data.get("judge_scorers") or []),
             extra={k: v for k, v in data.items()
                    if k not in cls._known_fields()},
         )
@@ -95,7 +101,7 @@ class Fixture:
             "trace_id", "prompt", "system", "messages", "model",
             "expected_substrings", "forbidden_substrings", "schema",
             "semantic_threshold", "reference_reply", "capture",
-            "fixture_response",
+            "fixture_response", "context", "judge_criteria", "judge_scorers",
         }
 
     # ------------------------------------------------------------------

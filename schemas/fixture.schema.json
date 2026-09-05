@@ -65,6 +65,22 @@
     "fixture_response": {
       "type": ["string", "null"],
       "description": "Optional canned response for offline (fixture) provider."
+    },
+    "context": {
+      "type": ["string", "null"],
+      "description": "Optional context (RAG) the reply is expected to be grounded in."
+    },
+    "judge_criteria": {
+      "type": ["string", "null"],
+      "description": "Optional free-text criteria for a G-Eval-style scorer."
+    },
+    "judge_scorers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["hallucination", "faithfulness", "answer_relevance", "toxicity", "bias", "g_eval"]
+      },
+      "description": "Scorers to apply via the LLM-as-judge layer (offline in CI, live in dev)."
     }
   },
   "additionalProperties": true

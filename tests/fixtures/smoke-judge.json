@@ -1,0 +1,13 @@
+{
+  "trace_id": "smoke-judge",
+  "prompt": "When was the Eiffel Tower completed?",
+  "model": "gpt-4o-mini",
+  "fixture_response": "The Eiffel Tower was completed in 1889.",
+  "context": "Construction of the Eiffel Tower took place from 1887 to 1889.",
+  "judge_scorers": ["hallucination", "faithfulness", "answer_relevance"],
+  "expected_substrings": ["1889"],
+  "capture": {
+    "captured_at": "2026-09-05T00:00:00Z",
+    "source": "ci-fixture"
+  }
+}

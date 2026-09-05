@@ -110,6 +110,8 @@ def load_config(
         forbidden_substrings=list(assertions_raw.get("forbidden_substrings", []) or []),
         semantic_threshold=float(assertions_raw.get("semantic_threshold", 0.0)),
         residual_secret_scan=bool(assertions_raw.get("residual_secret_scan", True)),
+        scorer_names=tuple(assertions_raw.get("scorer_names", []) or ()),
+        judge_model=runner_raw.get("judge_model", "gpt-4o-mini"),
     )
 
     return Config(scrubber=scrubber_cfg, runner=runner_cfg)
@@ -138,11 +140,13 @@ base_url   = "https://api.openai.com/v1"
 model      = "gpt-4o-mini"
 timeout_s  = 30
 max_retries = 2
+judge_model = "gpt-4o-mini"      # separate from `model` — usually cheaper is fine
 
 [runner.assertions]
 forbidden_substrings    = ["BEGIN PRIVATE KEY"]
 semantic_threshold      = 0.0
 residual_secret_scan    = true
+# scorer_names = ["hallucination", "faithfulness", "answer_relevance", "toxicity", "bias"]
 '''
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -271,6 +271,103 @@ variants = mutate_fixture(fx, n=8, seed=42)  # reproducible
 variants = mutate_fixture(fx, n=4, families=("entity", "synonym"))
 ```
 
+## LLM-as-judge scoring
+
+Six built-in scorers evaluate a reply against a rubric via an LLM judge:
+
+| Scorer             | What it measures                                  |
+|--------------------|---------------------------------------------------|
+| `hallucination`    | Reply contains unsourced factual claims.          |
+| `faithfulness`     | Reply is grounded in the supplied context (RAG).  |
+| `answer_relevance` | Reply addresses the user's actual question.        |
+| `toxicity`         | Reply contains harmful or unsafe content.         |
+| `bias`             | Reply contains demographic stereotyping or unfair generalisation. |
+| `g_eval`           | Custom criteria string supplied per fixture.      |
+
+Each scorer returns a score 0.0–1.0 and passes when the score meets its
+threshold (default 0.7). A score of 0.0 with reason `not_applicable` is
+treated as N/A and passes silently — this lets scorers abstain when their
+rubric is irrelevant (e.g. faithfulness when no context is supplied).
+
+Two judge backends ship:
+
+- **`OfflineJudge`** (CI default) — deterministic. Looks up canned verdicts
+  from a `(scorer_name, trace_id)` map; falls back to 1.0 (pass) when no
+  verdict is registered. CI builds stay hermetic and free.
+- **`LLMJudge`** — calls any OpenAI-compatible chat-completion endpoint
+  with the judge model. Set `OPENAI_API_KEY` or `EVAL_BRIDGE_JUDGE_API_KEY`.
+
+```bash
+# CI mode (default — offline judge, free)
+eval-bridge run tests/fixtures --junit junit.xml
+
+# Live mode (calls the judge model against your endpoint)
+eval-bridge run tests/fixtures --junit junit.xml --judge llm --judge-model gpt-4o-mini
+```
+
+Enable scorers globally via `eval-bridge.toml`:
+
+```toml
+[runner]
+judge_model = "gpt-4o-mini"   # usually cheaper than the model under test
+
+[runner.assertions]
+scorer_names = ["hallucination", "answer_relevance", "toxicity"]
+```
+
+Or per-fixture:
+
+```json
+{
+  "trace_id": "rag-001",
+  "prompt": "What does the doc say about refunds?",
+  "context": "...retrieved context...",
+  "judge_scorers": ["faithfulness", "hallucination"],
+  "fixture_response": "Refunds are processed within 30 days."
+}
+```
+
+For G-Eval (custom criteria), include the rubric in the fixture:
+
+```json
+{
+  "trace_id": "custom-001",
+  "prompt": "Translate to French",
+  "fixture_response": "Bonjour le monde",
+  "judge_criteria": "The reply is in French and ends with a period.",
+  "judge_scorers": ["g_eval"]
+}
+```
+
+Programmatic API:
+
+```python
+from eval_bridge import Runner, RunnerConfig, Fixture
+from eval_bridge.scoring import OfflineJudge, LLMJudge
+
+# CI: hermetic, deterministic.
+runner = Runner(judge=OfflineJudge())
+
+# Dev: live LLM judge against an OpenAI-compatible endpoint.
+judge = LLMJudge(base_url="https://api.openai.com/v1", model="gpt-4o-mini")
+runner = Runner(judge=judge)
+judge.close()
+
+# Bring your own scorer.
+from eval_bridge.scoring import Scorer
+my_scorer = Scorer(name="brand_voice", rubric="...", threshold=0.8)
+runner = Runner(judge=OfflineJudge(), scorer_set=[my_scorer])
+```
+
+### Known limitations of LLM-as-judge
+
+- **Verbosity bias** — judges tend to favour longer replies. Calibrate
+  thresholds per use case, not across the board.
+- **Position bias** — order of options in the rubric can sway verdicts. The
+  judge prompt is fixed and short to minimise this, but it is not zero.
+- **Cost** — each live judge call is one extra LLM request. Use a cheaper
+  model than the one under test; cache verdicts where appropriate.
+
 ## Programmatic SDK
 
 ```python

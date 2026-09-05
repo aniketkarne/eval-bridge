@@ -30,6 +30,14 @@ from .errors import ProviderError
 from .fixture import Fixture, FixtureSet
 from .provider import CompletionResult, FixtureProvider, Provider, provider_from_config
 from .scrubber import Scrubber, find_residual_secrets
+from .scoring import (
+    BUILTIN_SCORERS,
+    Judge,
+    OfflineJudge,
+    Scorer,
+    default_scorer_set,
+    g_eval,
+)
 
 # ---------------------------------------------------------------------------
 # Token-level Jaccard
@@ -207,6 +215,9 @@ class RunnerConfig:
     forbidden_substrings: list[str] = field(default_factory=list)
     semantic_threshold: float = 0.0
     residual_secret_scan: bool = True
+    # Scoring layer — opt-in. Names from BUILTIN_SCORERS + "g_eval" (custom).
+    scorer_names: tuple[str, ...] = field(default_factory=tuple)
+    judge_model: str = "gpt-4o-mini"
 
 
 class Runner:
@@ -217,10 +228,30 @@ class Runner:
         provider: Provider | None = None,
         scrubber: Scrubber | None = None,
         config: RunnerConfig | None = None,
+        judge: Judge | None = None,
+        scorer_set: list[Scorer] | None = None,
     ) -> None:
         self.config = config or RunnerConfig()
         self.provider = provider or provider_from_config(self.config)
         self.scrubber = scrubber or Scrubber.from_default_config()
+        # Judge defaults to OfflineJudge (deterministic, safe for CI).
+        self.judge = judge if judge is not None else OfflineJudge()
+        # Scorer set: explicit > config > empty.
+        if scorer_set is not None:
+            self.scorer_set = scorer_set
+        elif self.config.scorer_names:
+            builtins = {s.name: s for s in BUILTIN_SCORERS}
+            resolved: list[Scorer] = []
+            for n in self.config.scorer_names:
+                if n in builtins:
+                    resolved.append(builtins[n])
+                elif n == "g_eval":
+                    # G-Eval needs per-fixture criteria; instantiate lazily
+                    # in _assert. We carry a placeholder here.
+                    resolved.append(Scorer(name="g_eval", rubric="", threshold=0.7))
+            self.scorer_set = resolved
+        else:
+            self.scorer_set = []
 
     @classmethod
     def from_config(cls, config: RunnerConfig | None = None) -> "Runner":
@@ -362,7 +393,68 @@ class Runner:
                 actual=leaks,
             ))
 
+        # LLM-as-judge scoring (opt-in via RunnerConfig.scorer_names or
+        # per-fixture judge_scorers). CI uses the offline judge by default
+        # so verdicts are deterministic.
+        active_scorers = self._active_scorers(fixture)
+        for scorer in active_scorers:
+            try:
+                result = scorer.evaluate(
+                    judge=self.judge,
+                    fixture=fixture,
+                    reply=text,
+                    context=fixture.context,
+                )
+                reports.append(AssertionReport(
+                    name=f"scorer.{scorer.name}",
+                    passed=result.passed,
+                    detail=(
+                        f"score={result.score:.3f} threshold={scorer.threshold:.3f} "
+                        f"reason={result.reason!r}"
+                    ),
+                    expected=f">= {scorer.threshold:.3f}",
+                    actual=result.score,
+                ))
+            except Exception as e:  # noqa: BLE001 - judge failure must not abort the run
+                reports.append(AssertionReport(
+                    name=f"scorer.{scorer.name}",
+                    passed=False,
+                    detail=f"judge raised: {e}",
+                    expected="no exception",
+                    actual=str(e),
+                ))
+
         return reports
+
+    def _active_scorers(self, fixture: Fixture) -> list[Scorer]:
+        """Combine runner-wide scorer set with per-fixture overrides.
+
+        Per-fixture ``judge_scorers`` is additive: it does not replace the
+        runner set. ``"g_eval"`` in the per-fixture list triggers a custom
+        G-Eval scorer using the fixture's ``judge_criteria`` (or a no-op
+        if criteria is empty).
+        """
+        wants_g_eval = False
+        names = set(s.name for s in self.scorer_set)
+        for n in fixture.judge_scorers:
+            if n == "g_eval":
+                # Only emit a g_eval scorer if the fixture supplied
+                # criteria; otherwise silently skip (no failing assertion
+                # for missing-criteria).
+                if fixture.judge_criteria:
+                    wants_g_eval = True
+            elif n in {"hallucination", "faithfulness", "answer_relevance",
+                       "toxicity", "bias"}:
+                names.add(n)
+
+        builtins = {s.name: s for s in BUILTIN_SCORERS}
+        out: list[Scorer] = []
+        for n in sorted(names):
+            if n in builtins:
+                out.append(builtins[n])
+        if wants_g_eval and fixture.judge_criteria:
+            out.append(g_eval(fixture.judge_criteria, threshold=0.7))
+        return out
 
     # ------------------------------------------------------------------
     # Batch execution

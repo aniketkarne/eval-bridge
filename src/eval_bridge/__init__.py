@@ -15,6 +15,21 @@ from .runner import (
     TestCaseResult,
     jaccard,
 )
+from .scoring import (
+    BUILTIN_SCORERS,
+    BIAS,
+    FAITHFULNESS,
+    HALLUCINATION,
+    Judge,
+    LLMJudge,
+    OfflineJudge,
+    ScoreResult,
+    Scorer,
+    TOXICITY,
+    ANSWER_RELEVANCE,
+    default_scorer_set,
+    g_eval,
+)
 from .scrubber import (
     DEFAULT_PATTERNS,
     Pattern,
@@ -33,14 +48,22 @@ from .provider import (
 )
 
 __all__ = [
+    "ANSWER_RELEVANCE",
     "AssertionReport",
+    "BUILTIN_SCORERS",
+    "BIAS",
     "Config",
     "DEFAULT_PATTERNS",
     "EvalBridgeError",
+    "FAITHFULNESS",
     "Fixture",
     "FixtureError",
     "FixtureProvider",
     "FixtureSet",
+    "HALLUCINATION",
+    "Judge",
+    "LLMJudge",
+    "OfflineJudge",
     "OpenAICompatProvider",
     "Pattern",
     "Provider",
@@ -48,12 +71,17 @@ __all__ = [
     "Runner",
     "RunnerConfig",
     "RunnerReport",
+    "ScoreResult",
+    "Scorer",
     "ScrubResult",
     "Scrubber",
     "ScrubberConfig",
     "ScrubberError",
+    "TOXICITY",
     "TestCaseResult",
+    "default_scorer_set",
     "find_residual_secrets",
+    "g_eval",
     "jaccard",
     "load_config",
     "load_fixture",
@@ -62,4 +90,4 @@ __all__ = [
     "provider_from_config",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

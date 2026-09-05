@@ -15,6 +15,11 @@ from rich.table import Table
 from . import __version__
 from .config import load_config
 from .fixture import Fixture, load_fixture, load_fixture_dir
+from .scoring import (
+    LLMJudge,
+    OfflineJudge,
+    default_scorer_set,
+)
 from .mutator import mutate_fixture
 from .runner import Runner
 from .scrubber import Scrubber, find_residual_secrets
@@ -145,20 +150,47 @@ def capture(
               default=None, help="Path to eval-bridge.toml.")
 @click.option("--exit-on-fail/--no-exit-on-fail", default=True,
               help="Exit with non-zero status if any case fails.")
+@click.option("--judge", type=click.Choice(["offline", "llm"]), default="offline",
+              help="LLM-as-judge mode. 'offline' (default) is deterministic and "
+                   "uses canned verdicts keyed by (scorer, trace_id); 'llm' calls "
+                   "the judge_model against an OpenAI-compatible endpoint.")
+@click.option("--judge-model", default=None,
+              help="Override the judge model (default: from runner.judge_model).")
 def run(
     fixtures_dir: Path,
     junit: Path | None,
     provider: str | None,
     config: Path | None,
     exit_on_fail: bool,
+    judge: str,
+    judge_model: str | None,
 ) -> None:
     """Run fixtures and emit a JUnit XML report."""
     cfg = load_config(config) if config else load_config()
     if provider is not None:
         cfg.runner.provider = provider
+    if judge_model is not None:
+        cfg.runner.judge_model = judge_model
 
-    runner = Runner(config=cfg.runner, scrubber=Scrubber(cfg.scrubber))
+    judge_obj: OfflineJudge | LLMJudge
+    if judge == "llm":
+        judge_obj = LLMJudge(
+            base_url=cfg.runner.base_url,
+            model=cfg.runner.judge_model,
+            api_key=__import__("os").environ.get("EVAL_BRIDGE_JUDGE_API_KEY")
+                   or __import__("os").environ.get("OPENAI_API_KEY"),
+        )
+    else:
+        judge_obj = OfflineJudge()
+
+    runner = Runner(
+        config=cfg.runner,
+        scrubber=Scrubber(cfg.scrubber),
+        judge=judge_obj,
+    )
     report = runner.run_dir(fixtures_dir)
+    if judge == "llm":
+        judge_obj.close()  # type: ignore[attr-defined]
 
     # Pretty stdout summary
     table = Table(title="eval-bridge report")

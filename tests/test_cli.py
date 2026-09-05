@@ -197,4 +197,4 @@ def test_doctor_runs(runner: CliRunner):
 def test_version(runner: CliRunner):
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.2.0" in result.stdout
+    assert "0.3.0" in result.stdout
