@@ -1,5 +1,9 @@
 # eval-bridge
 
+
+<img width="1169" height="507" alt="image" src="https://github.com/user-attachments/assets/20e18d30-38a7-49e6-ab53-254e030d8bcc" />
+
+
 > Capture LLM failures, scrub PII deterministically, and replay them offline as
 > reproducible eval fixtures with JUnit XML output.
 
