@@ -23,6 +23,7 @@ from .scoring import (
 from .mutator import mutate_fixture
 from .runner import Runner
 from .scrubber import Scrubber, find_residual_secrets
+from .importer import import_langfuse, import_otel
 
 console = Console()
 err_console = Console(stderr=True)
@@ -297,6 +298,48 @@ def doctor(config: Path | None) -> None:
         err_console.print(f"[red]residual leaks: {leaks}[/red]")
         sys.exit(2)
     console.print("[green]residual secret scan: OK[/green]")
+
+
+# ---------------------------------------------------------------------------
+# import
+# ---------------------------------------------------------------------------
+
+@main.group(name="import")
+def import_() -> None:
+    """Import production traces from observability platforms."""
+
+
+@import_.command(name="otel")
+@click.argument("input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", "-o", type=click.Path(file_okay=False, path_type=Path),
+              required=True, help="Directory to write scrubbed fixtures into.")
+@click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Path to eval-bridge.toml.")
+def import_otel_cmd(input_path: Path, output: Path, config: Path | None) -> None:
+    """Import OpenTelemetry / Phoenix / Arize JSONL traces as fixtures.
+
+    Reads one JSON object per line. Skips non-LLM spans and prints the
+    skip count to stderr. Each imported trace becomes one fixture, scrubbed
+    before write so PII never lands in the repo.
+    """
+    cfg = load_config(config) if config else load_config()
+    scrubber = Scrubber(cfg.scrubber)
+    written = import_otel(input_path, output, scrubber=scrubber)
+    console.print(f"[bold]imported {len(written)} fixtures -> {output}[/bold]")
+
+
+@import_.command(name="langfuse")
+@click.argument("input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", "-o", type=click.Path(file_okay=False, path_type=Path),
+              required=True, help="Directory to write scrubbed fixtures into.")
+@click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
+              default=None, help="Path to eval-bridge.toml.")
+def import_langfuse_cmd(input_path: Path, output: Path, config: Path | None) -> None:
+    """Import a Langfuse JSONL export as fixtures."""
+    cfg = load_config(config) if config else load_config()
+    scrubber = Scrubber(cfg.scrubber)
+    written = import_langfuse(input_path, output, scrubber=scrubber)
+    console.print(f"[bold]imported {len(written)} fixtures -> {output}[/bold]")
 
 
 if __name__ == "__main__":  # pragma: no cover

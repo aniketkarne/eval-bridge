@@ -424,6 +424,40 @@ class Runner:
                     actual=str(e),
                 ))
 
+        # Per-message assertions (multi-turn fixtures). Each entry in
+        # fixture.message_assertions is checked against every chat message
+        # whose role matches (or "any"). Emit one AssertionReport per
+        # matched message.
+        for i, msg in enumerate(fixture.chat_messages()):
+            role = (msg.get("role") or "").lower()
+            content = msg.get("content")
+            if not isinstance(content, str):
+                continue
+            for rule in fixture.message_assertions:
+                rule_role = (rule.get("role") or "any").lower()
+                if rule_role != "any" and rule_role != role:
+                    continue
+                for needle in rule.get("must_contain") or []:
+                    ok = needle in content
+                    reports.append(AssertionReport(
+                        name=f"message.{i}.must_contain",
+                        passed=ok,
+                        detail=f"message {i} (role={role}) contains {needle!r}" if ok
+                               else f"message {i} (role={role}) missing {needle!r}",
+                        expected=f"CONTAIN {needle!r}",
+                        actual=content,
+                    ))
+                for needle in rule.get("must_not_contain") or []:
+                    ok = needle not in content
+                    reports.append(AssertionReport(
+                        name=f"message.{i}.must_not_contain",
+                        passed=ok,
+                        detail=f"message {i} (role={role}) does not contain {needle!r}" if ok
+                               else f"message {i} (role={role}) contains forbidden {needle!r}",
+                        expected=f"NOT CONTAIN {needle!r}",
+                        actual=content,
+                    ))
+
         return reports
 
     def _active_scorers(self, fixture: Fixture) -> list[Scorer]:

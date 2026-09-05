@@ -39,6 +39,7 @@ from .scrubber import (
     find_residual_secrets,
 )
 from .config import Config, load_config
+from .importer import import_langfuse, import_otel
 from .mutator import mutate_fixture
 from .provider import (
     FixtureProvider,
@@ -82,6 +83,8 @@ __all__ = [
     "default_scorer_set",
     "find_residual_secrets",
     "g_eval",
+    "import_langfuse",
+    "import_otel",
     "jaccard",
     "load_config",
     "load_fixture",
@@ -90,4 +93,4 @@ __all__ = [
     "provider_from_config",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

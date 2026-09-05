@@ -81,6 +81,19 @@
         "enum": ["hallucination", "faithfulness", "answer_relevance", "toxicity", "bias", "g_eval"]
       },
       "description": "Scorers to apply via the LLM-as-judge layer (offline in CI, live in dev)."
+    },
+    "message_assertions": {
+      "type": "array",
+      "description": "Per-message assertions for multi-turn fixtures. Each entry has role (system|user|assistant|any), must_contain (list of strings), and must_not_contain (list of strings). Evaluated against every message with that role in the chat history.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {"type": "string", "enum": ["system", "user", "assistant", "any"]},
+          "must_contain": {"type": "array", "items": {"type": "string"}},
+          "must_not_contain": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": true

@@ -49,6 +49,7 @@ class Fixture:
     context: str | None = None
     judge_criteria: str | None = None
     judge_scorers: list[str] = field(default_factory=list)
+    message_assertions: list[dict[str, Any]] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -91,6 +92,7 @@ class Fixture:
             context=data.get("context"),
             judge_criteria=data.get("judge_criteria"),
             judge_scorers=list(data.get("judge_scorers") or []),
+            message_assertions=list(data.get("message_assertions") or []),
             extra={k: v for k, v in data.items()
                    if k not in cls._known_fields()},
         )
@@ -102,6 +104,7 @@ class Fixture:
             "expected_substrings", "forbidden_substrings", "schema",
             "semantic_threshold", "reference_reply", "capture",
             "fixture_response", "context", "judge_criteria", "judge_scorers",
+            "message_assertions",
         }
 
     # ------------------------------------------------------------------

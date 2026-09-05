@@ -368,6 +368,65 @@ runner = Runner(judge=OfflineJudge(), scorer_set=[my_scorer])
 - **Cost** — each live judge call is one extra LLM request. Use a cheaper
   model than the one under test; cache verdicts where appropriate.
 
+## Import from observability platforms
+
+`eval-bridge import` reads production traces from observability stacks and
+emits scrubbed eval-bridge fixtures into your `tests/fixtures/` directory.
+Each imported trace becomes one fixture, PII-scrubbed before it lands on
+disk.
+
+Supported formats (JSONL, one record per line):
+
+- **OpenTelemetry / GenAI semantic conventions** — Phoenix, Arize,
+  Traceloop, OpenLLMetry. The importer matches `gen_ai.*` /
+  `llm.*` span names and attributes.
+- **Langfuse** — direct API export with `observations[].type="GENERATION"`.
+
+```bash
+eval-bridge import otel traces.jsonl --output tests/fixtures/
+eval-bridge import langfuse langfuse-export.jsonl --output tests/fixtures/
+# imported 142 fixtures -> tests/fixtures/
+```
+
+Non-LLM spans and malformed records are skipped (count printed to stderr);
+no record that lands on disk contains raw PII.
+
+Programmatic API:
+
+```python
+from eval_bridge import import_otel, import_langfuse, Scrubber
+
+# Custom scrubber (e.g. with org-specific patterns) flows through.
+written = import_otel("traces.jsonl", Path("tests/fixtures/"),
+                       scrubber=Scrubber(my_config))
+```
+
+## Multi-turn message assertions
+
+For multi-turn fixtures, attach per-message rules that run against every
+message in the chat history:
+
+```json
+{
+  "trace_id": "support-bot-001",
+  "messages": [
+    {"role": "system", "content": "You are a customer-support agent."},
+    {"role": "user", "content": "What's the refund policy?"},
+    {"role": "assistant", "content": "30 days, full refund, no questions asked."}
+  ],
+  "message_assertions": [
+    {"role": "system", "must_contain": ["customer-support"]},
+    {"role": "assistant", "must_contain": ["30 days"], "must_not_contain": ["PASSWORD", "API_KEY"]},
+    {"role": "any", "must_not_contain": ["BEGIN PRIVATE KEY"]}
+  ]
+}
+```
+
+Each rule emits one assertion per matching message. The `role` is one of
+`"system"`, `"user"`, `"assistant"`, or `"any"` (matches every message).
+Both `must_contain` and `must_not_contain` are optional and emit one
+assertion per needle per matching message.
+
 ## Programmatic SDK
 
 ```python
