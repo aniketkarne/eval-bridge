@@ -50,6 +50,7 @@ class Fixture:
     judge_criteria: str | None = None
     judge_scorers: list[str] = field(default_factory=list)
     message_assertions: list[dict[str, Any]] = field(default_factory=list)
+    category: str | None = None  # e.g. "pii-leak", "tool-misuse". Optional; defaults to trace_id stem.
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -78,6 +79,7 @@ class Fixture:
 
         return cls(
             trace_id=trace_id,
+            category=data.get("category"),
             prompt=prompt,
             system=data.get("system"),
             messages=list(data.get("messages") or []),
@@ -104,7 +106,7 @@ class Fixture:
             "expected_substrings", "forbidden_substrings", "schema",
             "semantic_threshold", "reference_reply", "capture",
             "fixture_response", "context", "judge_criteria", "judge_scorers",
-            "message_assertions",
+            "message_assertions", "category",
         }
 
     # ------------------------------------------------------------------

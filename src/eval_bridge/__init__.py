@@ -7,6 +7,7 @@ from .errors import (
     ScrubberError,
 )
 from .fixture import Fixture, FixtureSet, load_fixture, load_fixture_dir
+from .incident import COUNTER_FILE, next_incident_id
 from .runner import (
     AssertionReport,
     Runner,
@@ -91,6 +92,8 @@ __all__ = [
     "load_fixture_dir",
     "mutate_fixture",
     "provider_from_config",
+    "COUNTER_FILE",
+    "next_incident_id",
 ]
 
 __version__ = "0.4.0"
