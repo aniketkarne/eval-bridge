@@ -15,6 +15,7 @@ from rich.table import Table
 from . import __version__
 from .config import load_config
 from .fixture import Fixture, load_fixture, load_fixture_dir
+from .incident import next_incident_id
 from .scoring import (
     LLMJudge,
     OfflineJudge,
@@ -69,39 +70,58 @@ def main() -> None:
 @main.command()
 @click.argument("input_path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--output", "-o", type=click.Path(dir_okay=False, path_type=Path),
-              default=None, help="Where to write the fixture (JSON or YAML).")
+              default=None, help="Where to write the fixture (JSON or YAML). "
+                   "Mutually exclusive with --output-dir.")
+@click.option("--output-dir", type=click.Path(file_okay=False, path_type=Path),
+              default=None, help="Directory to write the fixture into. When combined "
+                   "with --category, the filename is auto-generated as "
+                   "<category>-NNN.json and the counter is updated.")
+@click.option("--category", default=None,
+              help="Incident category for stable ID generation (e.g. pii-leak, "
+                   "tool-misuse, hallucination). Requires --output-dir.")
 @click.option("--dry-run/--write", default=True,
               help="Dry-run prints the scrubbed fixture to stdout; --write saves it.")
 @click.option("--mutate", "mutate_n", type=int, default=0,
-              help="Generate N adversarial variants per fixture (entity swap, typo, "
-                   "reorder, synonym). Each variant is written alongside the base "
-                   "fixture with a `.mN` suffix in its trace_id.")
+              help="Generate N adversarial variants.")
 @click.option("--config", "-c", type=click.Path(dir_okay=False, path_type=Path),
               default=None, help="Path to eval-bridge.toml.")
 def capture(
     input_path: Path,
     output: Path | None,
+    output_dir: Path | None,
+    category: str | None,
     dry_run: bool,
     mutate_n: int,
     config: Path | None,
 ) -> None:
     """Capture an incident and emit a scrubbed eval fixture."""
+    if output is not None and output_dir is not None:
+        raise click.UsageError("use either --output or --output-dir, not both")
+    if category is not None and output_dir is None:
+        raise click.UsageError("--category requires --output-dir")
+    if output_dir is not None and category is None:
+        raise click.UsageError("--output-dir requires --category")
+
     cfg = load_config(config) if config else load_config()
     scrubber = Scrubber(cfg.scrubber)
     data = _read_any(input_path)
 
-    # Scrub every string leaf in the incident doc.
     scrubbed = scrubber.scrub_mapping(data)
-
-    # Build a fixture (may be missing some fields; from_dict validates).
     fixture = Fixture.from_dict(scrubbed)
     fixture.validate()
 
-    # Default output path
-    if output is None:
-        out = Path("tests/fixtures") / f"{fixture.trace_id}.json"
-    else:
+    out: Path
+    if output_dir is not None:
+        assert category is not None  # validated above
+        output_dir.mkdir(parents=True, exist_ok=True)
+        new_id = next_incident_id(output_dir, category)
+        fixture.trace_id = new_id
+        fixture.category = category
+        out = output_dir / f"{new_id}.json"
+    elif output is not None:
         out = output
+    else:
+        out = Path("tests/fixtures") / f"{fixture.trace_id}.json"
 
     payload = fixture.to_dict()
     payload["scrubber_counts"] = list(scrubber.scrub(json.dumps(data)).counts.items())
@@ -124,9 +144,6 @@ def capture(
     click.echo(f"wrote {out}  (scrubber matches: {payload['scrubber_counts']})")
 
     if mutate_n > 0:
-        # Variants land as siblings of the base fixture. Re-use the base
-        # file's stem so the family is visually grouped in the fixtures
-        # directory.
         for v in mutate_fixture(fixture, n=mutate_n, seed=0):
             vp = v.to_dict()
             vp["scrubber_counts"] = list(

@@ -113,6 +113,83 @@ def test_capture_with_mutate_dry_run_does_not_write(runner: CliRunner, tmp_path:
     assert "tr-mut-dry.m2" in result.stdout
 
 
+def test_capture_with_category_uses_next_incident_id(
+    runner: CliRunner, tmp_path: Path
+):
+    fx_dir = tmp_path / "fixtures"
+    fx_dir.mkdir()
+    (tmp_path / "incident.json").write_text(json.dumps({
+        "trace_id": "ignored",
+        "prompt": "leak my email jane@example.com",
+        "forbidden_substrings": ["jane@example.com"],
+    }))
+    counter = fx_dir / ".eval-bridge-counter"
+    counter.write_text('{"pii-leak": 7}\n')
+
+    result = runner.invoke(
+        main,
+        [
+            "capture", str(tmp_path / "incident.json"),
+            "--output-dir", str(fx_dir),
+            "--category", "pii-leak",
+            "--write",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    written = list(fx_dir.glob("pii-leak-*.json"))
+    assert len(written) == 1
+    fixture = json.loads(written[0].read_text())
+    assert fixture["trace_id"].startswith("pii-leak-")
+    counter_after = json.loads(counter.read_text())
+    assert counter_after["pii-leak"] == 8
+
+
+def test_capture_category_requires_output_dir(runner: CliRunner, tmp_path: Path):
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({"trace_id": "x", "prompt": "y"}))
+    result = runner.invoke(
+        main,
+        ["capture", str(incident), "--category", "pii-leak", "--write"],
+    )
+    assert result.exit_code != 0
+    assert "--category requires --output-dir" in result.output
+
+
+def test_capture_output_dir_requires_category(runner: CliRunner, tmp_path: Path):
+    fx_dir = tmp_path / "fixtures"
+    fx_dir.mkdir()
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({"trace_id": "x", "prompt": "y"}))
+    result = runner.invoke(
+        main,
+        ["capture", str(incident), "--output-dir", str(fx_dir), "--write"],
+    )
+    assert result.exit_code != 0
+    assert "--output-dir requires --category" in result.output
+
+
+def test_capture_output_and_output_dir_are_mutually_exclusive(
+    runner: CliRunner, tmp_path: Path
+):
+    fx_dir = tmp_path / "fixtures"
+    fx_dir.mkdir()
+    incident = tmp_path / "incident.json"
+    incident.write_text(json.dumps({"trace_id": "x", "prompt": "y"}))
+    out = tmp_path / "fx.json"
+    result = runner.invoke(
+        main,
+        [
+            "capture", str(incident),
+            "--output", str(out),
+            "--output-dir", str(fx_dir),
+            "--category", "pii-leak",
+            "--write",
+        ],
+    )
+    assert result.exit_code != 0
+    assert "use either --output or --output-dir, not both" in result.output
+
+
 # ---------------------------------------------------------------------------
 # run
 # ---------------------------------------------------------------------------
