@@ -1,0 +1,31 @@
+name: "Post eval-bridge results to PR"
+description: "Reads JUnit XML + optional baseline diff and posts a markdown summary as a PR comment."
+inputs:
+  junit-path:
+    description: "Path to the JUnit XML file."
+    required: true
+  baseline-diff-path:
+    description: "Optional path to a JSON file produced by `eval-bridge run --baseline`."
+    required: false
+    default: ""
+  github-token:
+    description: "Token for posting the comment."
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install eval-bridge
+      shell: bash
+      run: pip install -e .
+    - name: Post PR comment
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        JUNIT_PATH: ${{ inputs.junit-path }}
+        BASELINE_DIFF_PATH: ${{ inputs.baseline-diff-path }}
+      run: $GITHUB_ACTION_PATH/entrypoint.sh

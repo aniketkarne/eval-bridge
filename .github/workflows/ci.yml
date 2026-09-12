@@ -32,6 +32,13 @@ jobs:
         run: |
           pytest --cov=eval_bridge --cov-report=term-missing --junitxml=junit-${{ matrix.python-version }}.xml
 
+      - name: Post PR comment
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/eval-bridge-pr-comment
+        with:
+          junit-path: junit.xml
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish test results
         if: always()
         uses: dorny/test-reporter@v1
