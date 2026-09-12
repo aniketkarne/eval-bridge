@@ -52,6 +52,7 @@ class Fixture:
     message_assertions: list[dict[str, Any]] = field(default_factory=list)
     expected_tool_calls: list[dict[str, Any]] = field(default_factory=list)
     category: str | None = None  # e.g. "pii-leak", "tool-misuse". Optional; defaults to trace_id stem.
+    latency_ms_max: int | None = None  # budget assertion: fail if call exceeds this many ms
     extra: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -97,6 +98,7 @@ class Fixture:
             judge_scorers=list(data.get("judge_scorers") or []),
             message_assertions=list(data.get("message_assertions") or []),
             expected_tool_calls=list(data.get("expected_tool_calls") or []),
+            latency_ms_max=data.get("latency_ms_max"),
             extra={k: v for k, v in data.items()
                    if k not in cls._known_fields()},
         )
@@ -109,6 +111,7 @@ class Fixture:
             "semantic_threshold", "reference_reply", "capture",
             "fixture_response", "context", "judge_criteria", "judge_scorers",
             "message_assertions", "category", "expected_tool_calls",
+            "latency_ms_max",
         }
 
     # ------------------------------------------------------------------

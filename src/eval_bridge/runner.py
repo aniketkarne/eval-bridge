@@ -290,6 +290,14 @@ class Runner:
             )
 
         assertions = self._assert(fixture, text, response)
+        # Latency budget assertion (v0.5.0). Evaluate AFTER duration is
+        # known so we can compare the actual call latency against the
+        # budget. Only emitted when fixture.latency_ms_max is set.
+        if fixture.latency_ms_max is not None:
+            duration = time.perf_counter() - start
+            assertions.append(
+                self._assert_latency_budget(duration * 1000.0, fixture.latency_ms_max)
+            )
         passed = all(a.passed for a in assertions)
         duration = time.perf_counter() - start
         return TestCaseResult(
@@ -301,6 +309,29 @@ class Runner:
             assertions=assertions,
             response_text=text,
             error=error,
+        )
+
+    @staticmethod
+    def _assert_latency_budget(actual_ms: float, max_ms: int) -> AssertionReport:
+        """Assert the actual call latency does not exceed the budget.
+
+        Concise name ``latency_ms`` is grep-friendly; consumers that want
+        to surface slow calls can filter ``"latency_ms" in a.name``.
+        """
+        if actual_ms <= max_ms:
+            return AssertionReport(
+                name="latency_ms",
+                passed=True,
+                detail=f"{actual_ms:.0f}ms <= {max_ms}ms",
+                expected=f"<= {max_ms}ms",
+                actual=actual_ms,
+            )
+        return AssertionReport(
+            name="latency_ms",
+            passed=False,
+            detail=f"{actual_ms:.0f}ms > budget {max_ms}ms",
+            expected=f"<= {max_ms}ms",
+            actual=actual_ms,
         )
 
     def _assert(self, fixture: Fixture, text: str, response: CompletionResult | None = None) -> list[AssertionReport]:

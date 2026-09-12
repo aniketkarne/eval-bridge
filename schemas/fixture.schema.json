@@ -107,6 +107,11 @@
         },
         "additionalProperties": false
       }
+    },
+    "latency_ms_max": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Optional per-call latency budget in milliseconds. If set and the call exceeds this, the fixture fails the 'latency_ms' assertion."
     }
   },
   "additionalProperties": true

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -53,17 +54,40 @@ def _fx(trace_id="t1", prompt="hi", **kw) -> Fixture:
     return Fixture(trace_id=trace_id, prompt=prompt, **kw)
 
 
-def _run_one(fixture: Fixture, *, provider_response: str | None = None) -> RunnerReport:
+def _run_one(
+    fixture: Fixture,
+    *,
+    provider_response: str | None = None,
+    simulated_latency_ms: float | None = None,
+    monkeypatch: pytest.MonkeyPatch | None = None,
+) -> RunnerReport:
     """Run a single fixture through the offline FixtureProvider.
 
     If *provider_response* is given, the fixture is rebuilt with that as
     its ``fixture_response`` (so the test can vary the canned reply
     without mutating the input fixture).
+
+    If *simulated_latency_ms* is given, ``time.perf_counter`` is
+    monkey-patched to advance by that many ms (so the runner observes a
+    known duration). Requires *monkeypatch*.
     """
     if provider_response is not None:
         data = fixture.to_dict()
         data["fixture_response"] = provider_response
         fixture = Fixture.from_dict(data)
+    if simulated_latency_ms is not None:
+        if monkeypatch is None:
+            raise ValueError("simulated_latency_ms requires a monkeypatch fixture")
+        delay_s = simulated_latency_ms / 1000.0
+        base = {"t": 0.0}
+
+        def fake_perf_counter() -> float:
+            # The runner takes a snapshot at start and reads it after the
+            # provider call; advance once on the second read.
+            base["t"] += delay_s
+            return base["t"]
+
+        monkeypatch.setattr("eval_bridge.runner.time.perf_counter", fake_perf_counter)
     return Runner(provider=FixtureProvider()).run([fixture])
 
 
@@ -217,3 +241,25 @@ def test_tool_call_assertion_fails_on_wrong_tool():
     )
     report = _run_one(fixture, provider_response='{"name":"send_email","arguments":{"to":"x@y"}}')
     assert not report.passed
+
+
+# ---------------------------------------------------------------------------
+# latency_ms_max budget assertion (Task 4)
+# ---------------------------------------------------------------------------
+
+def test_latency_budget_passes_under(monkeypatch: pytest.MonkeyPatch):
+    fixture = Fixture(trace_id="lat-1", prompt="x", fixture_response="ok", latency_ms_max=1000)
+    report = _run_one(fixture, simulated_latency_ms=50, monkeypatch=monkeypatch)
+    assert report.passed
+    latency_assertions = [
+        a for a in report.results[0].assertions if a.name == "latency_ms"
+    ]
+    assert latency_assertions and latency_assertions[0].passed
+
+
+def test_latency_budget_fails_over(monkeypatch: pytest.MonkeyPatch):
+    fixture = Fixture(trace_id="lat-2", prompt="x", fixture_response="ok", latency_ms_max=10)
+    report = _run_one(fixture, simulated_latency_ms=500, monkeypatch=monkeypatch)
+    assert not report.passed
+    failing = [a for a in report.results[0].assertions if not a.passed]
+    assert any("latency_ms" in a.name for a in failing)
