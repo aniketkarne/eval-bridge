@@ -199,6 +199,10 @@ def load_fixture_dir(
 
     # Apply the user-supplied glob pattern (e.g. "test_*.json") per file name.
     for cand in candidates:
+        # Skip dotfiles — these are sidecars (e.g. .baseline.json,
+        # .eval-bridge-counter), not fixtures.
+        if cand.name.startswith("."):
+            continue
         if any(fnmatch.fnmatch(cand.name, pat) for pat in (
             pattern, "*.json", "*.yaml", "*.yml"
         )):

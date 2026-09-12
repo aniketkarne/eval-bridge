@@ -13,6 +13,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
+from .baseline import BASELINE_FILE, diff_baseline, load_baseline, write_baseline
 from .config import load_config
 from .fixture import Fixture, load_fixture, load_fixture_dir
 from .incident import next_incident_id
@@ -172,6 +173,15 @@ def capture(
                    "the judge_model against an OpenAI-compatible endpoint.")
 @click.option("--judge-model", default=None,
               help="Override the judge model (default: from runner.judge_model).")
+@click.option("--baseline", type=click.Path(dir_okay=False, path_type=Path), default=None,
+              help="Compare against this baseline file. Reports silent regressions, "
+                   "fixes, and removals; prints them but does not change exit code "
+                   "for silent_regression events. Exit code 3 is added on top of "
+                   "failure for 'regressed' or 'removed' events.")
+@click.option("--write-baseline/--no-write-baseline", "write_baseline_flag", default=False,
+              help="Write the current run's snapshot as the new baseline. If "
+                   "--baseline is provided, writes to that path; otherwise writes "
+                   "to <fixtures_dir>/.baseline.json.")
 def run(
     fixtures_dir: Path,
     junit: Path | None,
@@ -180,6 +190,8 @@ def run(
     exit_on_fail: bool,
     judge: str,
     judge_model: str | None,
+    baseline: Path | None,
+    write_baseline_flag: bool,
 ) -> None:
     """Run fixtures and emit a JUnit XML report."""
     cfg = load_config(config) if config else load_config()
@@ -207,6 +219,39 @@ def run(
     report = runner.run_dir(fixtures_dir)
     if judge == "llm":
         judge_obj.close()  # type: ignore[attr-defined]
+
+    # Build a snapshot from the current run for baseline diffing.
+    snapshot: dict[str, dict] = {
+        r.trace_id: {
+            "trace_id": r.trace_id,
+            "passed": r.passed,
+            "actual_output": r.response_text,
+        }
+        for r in report.results
+    }
+
+    prior = load_baseline(baseline) if baseline is not None else None
+    if prior is not None:
+        diffs = diff_baseline(prior, snapshot)
+        if diffs:
+            dtable = Table(title="baseline diff")
+            dtable.add_column("trace_id", style="bold")
+            dtable.add_column("kind")
+            for d in diffs:
+                dtable.add_row(d["trace_id"], d["kind"])
+            console.print(dtable)
+            # Only hard regressions/removals flip exit code; silent_regression
+            # is reported loudly in stdout but does not fail the build.
+            if any(d["kind"] in ("regressed", "removed") for d in diffs):
+                # Defer to the exit-on-fail block below if --no-exit-on-fail;
+                # otherwise propagate exit code 3.
+                if exit_on_fail:
+                    sys.exit(3)
+
+    if write_baseline_flag:
+        target = baseline if baseline is not None else (fixtures_dir / BASELINE_FILE)
+        write_baseline(target, snapshot)
+        console.print(f"baseline written: {target}")
 
     # Pretty stdout summary
     table = Table(title="eval-bridge report")
