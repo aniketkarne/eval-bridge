@@ -27,13 +27,20 @@ def test_end_to_end_capture_run_and_junit(tmp_path: Path, monkeypatch):
         "expected_substrings": ["ok"],
     }))
 
+    # Pass the project's src/ on PYTHONPATH so the subprocess can resolve
+    # `eval_bridge` even when pytest's venv doesn't have it on sys.path.
+    import os as _os
+    src_path = Path(__file__).resolve().parent.parent / "src"
+    sub_env = _os.environ.copy()
+    sub_env["PYTHONPATH"] = str(src_path) + _os.pathsep + sub_env.get("PYTHONPATH", "")
+
     res = subprocess.run(
         [sys.executable, "-m", "eval_bridge.cli",
          "capture", str(incident),
          "--output", "tests/fixtures/trace-x.json",
          "--write"],
         capture_output=True, text=True,
-        env={"PATH": __import__("os").environ.get("PATH", "")},
+        env=sub_env,
     )
     assert res.returncode == 0, res.stdout + res.stderr
 
@@ -68,7 +75,7 @@ def test_end_to_end_capture_run_and_junit(tmp_path: Path, monkeypatch):
          "--junit", str(junit),
          "--no-exit-on-fail"],
         capture_output=True, text=True,
-        env={"PATH": __import__("os").environ.get("PATH", "")},
+        env=sub_env,
     )
     assert res.returncode == 0, res.stdout + res.stderr
     assert junit.exists()
