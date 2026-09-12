@@ -110,9 +110,7 @@ def capture(
     fixture = Fixture.from_dict(scrubbed)
     fixture.validate()
 
-    out: Path
-    if output_dir is not None:
-        assert category is not None  # validated above
+    if output_dir is not None and category is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
         new_id = next_incident_id(output_dir, category)
         fixture.trace_id = new_id
