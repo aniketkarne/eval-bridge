@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eval-bridge"
-version = "0.4.0"
-description = "Capture LLM failures, deterministic PII scrubbing, offline-first eval runner with JUnit XML"
+version = "0.5.0"
+description = "Incident-to-regression-test pipeline for LLM applications: scrub traces, lock production failures into permanent tests"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Aniket Karne", email = "aniket@karne.ai"},
 ]
-keywords = ["llm", "evaluation", "pii", "scrubber", "junit", "openai"]
+keywords = ["llm", "regression", "pii", "scrubber", "junit", "incident", "production"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
