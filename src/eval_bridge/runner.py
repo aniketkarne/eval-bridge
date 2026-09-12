@@ -289,7 +289,7 @@ class Runner:
                 error=str(e),
             )
 
-        assertions = self._assert(fixture, text)
+        assertions = self._assert(fixture, text, response)
         passed = all(a.passed for a in assertions)
         duration = time.perf_counter() - start
         return TestCaseResult(
@@ -303,7 +303,7 @@ class Runner:
             error=error,
         )
 
-    def _assert(self, fixture: Fixture, text: str) -> list[AssertionReport]:
+    def _assert(self, fixture: Fixture, text: str, response: CompletionResult | None = None) -> list[AssertionReport]:
         reports: list[AssertionReport] = []
 
         # Global + per-fixture forbidden substrings
@@ -458,7 +458,87 @@ class Runner:
                         actual=content,
                     ))
 
+        # Tool-call correctness (v0.5.0). Compare the model's response to
+        # fixture.expected_tool_calls. The response text is parsed as JSON;
+        # if it has a top-level "tool_calls" array, use it directly; if it
+        # looks like a single tool call (has "name"), treat it as a one-
+        # element list; otherwise no tool calls were made and the
+        # assertion fails by design.
+        if fixture.expected_tool_calls:
+            actual_calls = self._extract_tool_calls(text, response)
+            reports.append(self._assert_tool_calls(actual_calls, fixture.expected_tool_calls))
+
         return reports
+
+    @staticmethod
+    def _normalise_tool_call(call: dict[str, Any]) -> dict[str, Any]:
+        """Sort argument keys so deep-equal is order-independent."""
+        if "arguments" in call and isinstance(call["arguments"], dict):
+            call = {**call, "arguments": {k: call["arguments"][k] for k in sorted(call["arguments"])}}
+        return call
+
+    @staticmethod
+    def _extract_tool_calls(text: str, response: CompletionResult | None) -> list[dict[str, Any]]:
+        """Best-effort extraction of tool calls from a provider response.
+
+        Order of preference:
+        1. ``response.raw["tool_calls"]`` if the provider returned it.
+        2. ``response.raw["choices"][0]["message"]["tool_calls"]`` (OpenAI shape).
+        3. Parse *text* as JSON: a list of calls, a dict with "tool_calls",
+           or a single call (has "name").
+        """
+        if response is not None:
+            raw = response.raw or {}
+            if isinstance(raw, dict):
+                if isinstance(raw.get("tool_calls"), list):
+                    return [c for c in raw["tool_calls"] if isinstance(c, dict)]
+                choices = raw.get("choices") or []
+                if choices:
+                    msg = (choices[0] or {}).get("message") or {}
+                    tcs = msg.get("tool_calls")
+                    if isinstance(tcs, list):
+                        return [c for c in tcs if isinstance(c, dict)]
+        try:
+            parsed = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if isinstance(parsed, list):
+            return [c for c in parsed if isinstance(c, dict)]
+        if isinstance(parsed, dict):
+            if isinstance(parsed.get("tool_calls"), list):
+                return [c for c in parsed["tool_calls"] if isinstance(c, dict)]
+            # A single tool call: a dict with a "name" key.
+            if "name" in parsed:
+                return [parsed]
+        return []
+
+    def _assert_tool_calls(
+        self,
+        actual_calls: list[dict[str, Any]],
+        expected: list[dict[str, Any]],
+    ) -> AssertionReport:
+        """Verify the model's response tool-call matches the expected sequence.
+
+        Compares name, and arguments deep-equal (modulo key order). Order of
+        tool calls in the response must match the expected order.
+        """
+        actual_norm = [self._normalise_tool_call(c) for c in actual_calls]
+        expected_norm = [self._normalise_tool_call(c) for c in expected]
+        if actual_norm == expected_norm:
+            return AssertionReport(
+                name="tool_calls",
+                passed=True,
+                detail=f"{len(expected_norm)} tool call(s) match",
+                expected=expected_norm,
+                actual=actual_norm,
+            )
+        return AssertionReport(
+            name="tool_calls",
+            passed=False,
+            detail=f"expected {expected_norm!r} got {actual_norm!r}",
+            expected=expected_norm,
+            actual=actual_norm,
+        )
 
     def _active_scorers(self, fixture: Fixture) -> list[Scorer]:
         """Combine runner-wide scorer set with per-fixture overrides.

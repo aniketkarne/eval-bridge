@@ -53,6 +53,20 @@ def _fx(trace_id="t1", prompt="hi", **kw) -> Fixture:
     return Fixture(trace_id=trace_id, prompt=prompt, **kw)
 
 
+def _run_one(fixture: Fixture, *, provider_response: str | None = None) -> RunnerReport:
+    """Run a single fixture through the offline FixtureProvider.
+
+    If *provider_response* is given, the fixture is rebuilt with that as
+    its ``fixture_response`` (so the test can vary the canned reply
+    without mutating the input fixture).
+    """
+    if provider_response is not None:
+        data = fixture.to_dict()
+        data["fixture_response"] = provider_response
+        fixture = Fixture.from_dict(data)
+    return Runner(provider=FixtureProvider()).run([fixture])
+
+
 def test_runner_passing_fixture():
     fx = _fx(expected_substrings=["ok"], fixture_response="ok thanks")
     report = Runner().run([fx])
@@ -175,3 +189,31 @@ def test_runner_report_to_dict_shape():
     assert d["failed"] == 0
     assert "results" in d
     assert "duration_s" in d
+
+
+# ---------------------------------------------------------------------------
+# tool_call assertion kind (Task 3)
+# ---------------------------------------------------------------------------
+
+def test_tool_call_assertion_passes_when_correct():
+    fixture = Fixture(
+        trace_id="tool-001",
+        prompt="What's the weather in Paris?",
+        fixture_response='{"result":"sunny"}',
+        expected_tool_calls=[
+            {"name": "get_weather", "arguments": {"city": "Paris"}},
+        ],
+    )
+    report = _run_one(fixture, provider_response='{"name":"get_weather","arguments":{"city":"Paris"}}')
+    assert report.passed, report.results[0].assertions
+
+
+def test_tool_call_assertion_fails_on_wrong_tool():
+    fixture = Fixture(
+        trace_id="tool-002",
+        prompt="...",
+        fixture_response=None,
+        expected_tool_calls=[{"name": "get_weather", "arguments": {"city": "Paris"}}],
+    )
+    report = _run_one(fixture, provider_response='{"name":"send_email","arguments":{"to":"x@y"}}')
+    assert not report.passed

@@ -94,6 +94,19 @@
         },
         "additionalProperties": false
       }
+    },
+    "expected_tool_calls": {
+      "type": "array",
+      "description": "Expected sequence of tool calls the model should make. Each entry has a 'name' and an 'arguments' object. Compared deep-equal (argument-key order insensitive).",
+      "items": {
+        "type": "object",
+        "required": ["name", "arguments"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "arguments": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": true
