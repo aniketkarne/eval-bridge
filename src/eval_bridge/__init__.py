@@ -6,6 +6,7 @@ from .errors import (
     ProviderError,
     ScrubberError,
 )
+from .errors import EvalBridgeError
 from .fixture import Fixture, FixtureSet, load_fixture, load_fixture_dir
 from .incident import COUNTER_FILE, next_incident_id
 from .runner import (
@@ -63,6 +64,7 @@ __all__ = [
     "FixtureProvider",
     "FixtureSet",
     "HALLUCINATION",
+    "IncidentIDError",
     "Judge",
     "LLMJudge",
     "OfflineJudge",

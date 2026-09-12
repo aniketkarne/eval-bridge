@@ -6,7 +6,14 @@ import json
 import re
 from pathlib import Path
 
+from .errors import EvalBridgeError
+
 COUNTER_FILE = Path(".eval-bridge-counter")
+
+
+class IncidentIDError(EvalBridgeError):
+    """Raised when an incident ID cannot be generated (e.g. invalid category)."""
+
 
 # Hyphen-separated lowercase words; length 2..32. Examples: pii-leak,
 # tool-misuse, hallucination, wrong-tool, format-error, generic.
@@ -46,8 +53,9 @@ def next_incident_id(fixtures_dir: Path, category: str) -> str:
     and is committed to git so IDs are stable across machines.
     """
     if not _CATEGORY_RE.match(category):
-        raise ValueError(
-            f"invalid category {category!r}: must match {_CATEGORY_RE.pattern}"
+        raise IncidentIDError(
+            f"invalid category {category!r}: must match {_CATEGORY_RE.pattern}",
+            context={"category": category},
         )
     counter = _load_counter(fixtures_dir)
     n = counter.get(category, 0) + 1
@@ -56,4 +64,4 @@ def next_incident_id(fixtures_dir: Path, category: str) -> str:
     return f"{category}-{n:03d}"
 
 
-__all__ = ["COUNTER_FILE", "next_incident_id"]
+__all__ = ["COUNTER_FILE", "IncidentIDError", "next_incident_id"]
