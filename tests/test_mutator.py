@@ -14,7 +14,7 @@ def _fx(prompt: str = "Summarize the Q3 sales report for Jane Doe on 2025-09-12.
         prompt=prompt,
         system=system,
         messages=messages or [],
-        model="gpt-4o-mini",
+        model="gpt-6-luna",
         expected_substrings=["Jane Doe", "2025-09-12"],
         forbidden_substrings=["BEGIN PRIVATE KEY"],
     )

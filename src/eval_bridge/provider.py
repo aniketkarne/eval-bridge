@@ -93,7 +93,7 @@ class OpenAICompatProvider:
     def __init__(
         self,
         base_url: str = "https://api.openai.com/v1",
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-6-luna",
         api_key: str | None = None,
         timeout_s: float = 30.0,
         max_retries: int = 2,
@@ -180,7 +180,7 @@ def provider_from_config(cfg: Any) -> Provider:
     if name in {"openai_compat", "openai"}:
         return OpenAICompatProvider(
             base_url=getattr(cfg, "base_url", "https://api.openai.com/v1"),
-            model=getattr(cfg, "model", "gpt-4o-mini"),
+            model=getattr(cfg, "model", "gpt-6-luna"),
             timeout_s=getattr(cfg, "timeout_s", 30.0),
             max_retries=getattr(cfg, "max_retries", 2),
         )

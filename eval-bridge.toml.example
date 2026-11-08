@@ -16,7 +16,7 @@ ssn         = "{ssn}"
 [runner]
 provider   = "fixture"
 base_url   = "https://api.openai.com/v1"
-model      = "gpt-4o-mini"
+model      = "gpt-6-luna"
 timeout_s  = 30
 max_retries = 2
 

@@ -97,10 +97,12 @@ Future changes to the agent that re-introduce the same buggy tool-call — or th
 
 ### 1. Install
 
+Not on PyPI yet — install from a clone:
+
 ```bash
-pip install eval-bridge
-# or, from a clone:
-pip install -e ".[dev]"
+git clone https://github.com/aniketkarne/eval-bridge.git
+cd eval-bridge
+pip install -e ".[dev]"     # dev extras pull in pytest; plain `pip install -e .` works too
 ```
 
 ### 2. Promote a production failure into a fixture
@@ -146,7 +148,7 @@ eval-bridge run tests/fixtures \
     --junit junit.xml
 ```
 
-Exits with code `1` on hard regressions, `3` on silent regressions (output changed but assertions still pass), `0` on clean.
+Exits with code `0` on clean, `1` when an assertion fails, and `3` when the baseline diff shows a hard regression (a previously-fixed failure returned or a fixture vanished). Silent regressions — output changed while assertions still pass — are reported in the baseline diff table but do not change the exit code.
 
 ---
 
@@ -274,7 +276,7 @@ Two judge backends ship:
 - **`LLMJudge`** — calls any OpenAI-compatible chat-completion endpoint. Set `OPENAI_API_KEY` or `EVAL_BRIDGE_JUDGE_API_KEY`.
 
 ```bash
-eval-bridge run tests/fixtures --judge llm --judge-model gpt-4o-mini
+eval-bridge run tests/fixtures --judge llm --judge-model gpt-6-luna
 ```
 
 ### Known limitations of LLM-as-judge
@@ -404,7 +406,7 @@ extra_patterns = [
 [runner]
 provider    = "fixture"           # "fixture" | "openai_compat"
 base_url    = "https://api.openai.com/v1"
-model       = "gpt-4o-mini"
+model       = "gpt-6-luna"
 timeout_s   = 30
 max_retries = 2
 
@@ -436,8 +438,8 @@ eval-bridge run <fixtures_dir>
         --exit-on-fail | --no-exit-on-fail
         --config PATH
 
-eval-bridge import otel   <traces.jsonl>     --output-dir DIR
-eval-bridge import langfuse <export.jsonl>   --output-dir DIR
+eval-bridge import otel   <traces.jsonl>     --output DIR     # required
+eval-bridge import langfuse <export.jsonl>   --output DIR     # required
 
 eval-bridge scrub <file>                     --output PATH
 eval-bridge doctor                           # show config + scrubber coverage
@@ -469,6 +471,16 @@ A composite GitHub Action at `.github/actions/eval-bridge-pr-comment/` runs afte
 ```
 
 The action also surfaces baseline-diff events (regressions, silent regressions) directly in the PR comment.
+
+The job's `GITHUB_TOKEN` needs `pull-requests: write` for the comment to post — with the default read-only token, `gh pr comment` fails with `GraphQL: Resource not accessible by integration`:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+```
+
+Note: PRs from forks always run with a read-only token that a `permissions` block cannot elevate, so on fork PRs the comment step warns and skips instead of failing the job. Posting is best-effort by design.
 
 ---
 

@@ -104,14 +104,14 @@ def load_config(
     runner_cfg = RunnerConfig(
         provider=runner_raw.get("provider", "fixture"),
         base_url=runner_raw.get("base_url", "https://api.openai.com/v1"),
-        model=runner_raw.get("model", "gpt-4o-mini"),
+        model=runner_raw.get("model", "gpt-6-luna"),
         timeout_s=float(runner_raw.get("timeout_s", 30.0)),
         max_retries=int(runner_raw.get("max_retries", 2)),
         forbidden_substrings=list(assertions_raw.get("forbidden_substrings", []) or []),
         semantic_threshold=float(assertions_raw.get("semantic_threshold", 0.0)),
         residual_secret_scan=bool(assertions_raw.get("residual_secret_scan", True)),
         scorer_names=tuple(assertions_raw.get("scorer_names", []) or ()),
-        judge_model=runner_raw.get("judge_model", "gpt-4o-mini"),
+        judge_model=runner_raw.get("judge_model", "gpt-6-luna"),
     )
 
     return Config(scrubber=scrubber_cfg, runner=runner_cfg)
@@ -137,10 +137,10 @@ ssn         = "{ssn}"
 [runner]
 provider   = "fixture"            # "fixture" | "openai_compat"
 base_url   = "https://api.openai.com/v1"
-model      = "gpt-4o-mini"
+model      = "gpt-6-luna"
 timeout_s  = 30
 max_retries = 2
-judge_model = "gpt-4o-mini"      # separate from `model` — usually cheaper is fine
+judge_model = "gpt-6-luna"      # separate from `model` — usually cheaper is fine
 
 [runner.assertions]
 forbidden_substrings    = ["BEGIN PRIVATE KEY"]

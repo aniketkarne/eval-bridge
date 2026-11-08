@@ -204,7 +204,7 @@ class LLMJudge:
 
     Uses ``OpenAICompatProvider`` under the hood for consistency with the
     rest of eval-bridge's provider model. The judge model is typically
-    cheaper than the model under test (e.g. gpt-4o-mini judging gpt-4o).
+    cheaper than the model under test (e.g. gpt-6-luna judging gpt-6-sol).
 
     ``client`` is an optional ``httpx.Client`` for test injection.
     """
@@ -215,7 +215,7 @@ class LLMJudge:
         self,
         *,
         base_url: str = "https://api.openai.com/v1",
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-6-luna",
         api_key: str | None = None,
         timeout_s: float = 30.0,
         client: httpx.Client | None = None,
@@ -247,7 +247,9 @@ class LLMJudge:
                     prompt=prompt[:8000], reply=reply[:8000],
                 )},
             ],
-            "temperature": 0.0,
+            # No sampling params: current reasoning models reject non-default
+            # temperature/top_p. The judge prompt already demands one strict
+            # JSON verdict, which is the determinism we wanted from temp=0.
             "response_format": {"type": "json_object"},
         }
         headers = {"Content-Type": "application/json"}

@@ -209,7 +209,9 @@ class RunnerConfig:
 
     provider: str = "fixture"
     base_url: str = "https://api.openai.com/v1"
-    model: str = "gpt-4o-mini"
+    # gpt-4o-mini was deprecated 2026-10-14 and shuts down 2027-01-14;
+    # OpenAI names gpt-6-luna as its replacement.
+    model: str = "gpt-6-luna"
     timeout_s: float = 30.0
     max_retries: int = 2
     forbidden_substrings: list[str] = field(default_factory=list)
@@ -217,7 +219,7 @@ class RunnerConfig:
     residual_secret_scan: bool = True
     # Scoring layer — opt-in. Names from BUILTIN_SCORERS + "g_eval" (custom).
     scorer_names: tuple[str, ...] = field(default_factory=tuple)
-    judge_model: str = "gpt-4o-mini"
+    judge_model: str = "gpt-6-luna"
 
 
 class Runner:

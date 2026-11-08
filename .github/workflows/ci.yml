@@ -6,6 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+# pull-requests: write is required by the PR-comment step below; checks: write
+# by dorny/test-reporter. Without an explicit block the default token is
+# read-only and `gh pr comment` fails with "Resource not accessible by
+# integration".
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -33,10 +42,10 @@ jobs:
           pytest --cov=eval_bridge --cov-report=term-missing --junitxml=junit-${{ matrix.python-version }}.xml
 
       - name: Post PR comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.12'
         uses: ./.github/actions/eval-bridge-pr-comment
         with:
-          junit-path: junit.xml
+          junit-path: junit-${{ matrix.python-version }}.xml
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish test results

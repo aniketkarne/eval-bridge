@@ -24,12 +24,12 @@ def test_from_dict_round_trip():
         "prompt": "hello",
         "expected_substrings": ["hi"],
         "forbidden_substrings": ["bye"],
-        "model": "gpt-4o-mini",
+        "model": "gpt-6-luna",
     })
     d = fx.to_dict()
     assert d["trace_id"] == "t1"
     assert d["expected_substrings"] == ["hi"]
-    assert d["model"] == "gpt-4o-mini"
+    assert d["model"] == "gpt-6-luna"
 
 
 def test_validate_ok():

@@ -14,14 +14,16 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v4
+    # No checkout here: the job must already have checked out the repo for
+    # this local action to resolve, and actions/checkout defaults to
+    # clean=true, which runs `git clean -ffdx` and deletes untracked
+    # artifacts (junit XMLs written by earlier steps) before the reporter
+    # step can read them. No pip install either — entrypoint.sh needs only
+    # python3 stdlib and gh, so the action works in non-Python repos too.
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
-    - name: Install eval-bridge
-      shell: bash
-      run: pip install -e .
     - name: Post PR comment
       shell: bash
       env:

@@ -18,7 +18,10 @@ from jsonschema import Draft7Validator
 
 from .errors import FixtureError
 
-SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent / "schemas" / "fixture.schema.json"
+# The schema ships inside the package (src/eval_bridge/schemas/) so it is
+# present in wheels and installed copies — the old repo-root location was
+# outside the package and vanished on install, crashing every fixture load.
+SCHEMA_PATH = Path(__file__).resolve().parent / "schemas" / "fixture.schema.json"
 _VALIDATOR: Draft7Validator | None = None
 
 

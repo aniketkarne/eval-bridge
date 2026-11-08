@@ -8,9 +8,10 @@ fi
 
 # Parse JUnit XML to extract summary stats. Use python for portability.
 read TESTS FAILURES ERRORS SKIPPED TIME <<<"$(python3 - <<'PY'
-import xml.etree.ElementTree as sys
+import sys
+import xml.etree.ElementTree as ET
 import os
-tree = sys.parse(os.environ["JUNIT_PATH"])
+tree = ET.parse(os.environ["JUNIT_PATH"])
 root = tree.getroot()
 # Support both <testsuite> as root and <testsuites>
 if root.tag != "testsuite":
@@ -43,4 +44,26 @@ if [[ -n "${BASELINE_DIFF_PATH}" ]] && [[ -f "${BASELINE_DIFF_PATH}" ]]; then
   fi
 fi
 
-gh pr comment --body "${BODY}"
+gh_post_comment() {
+  # gh infers the PR from the git branch, but PR checkouts run on a detached
+  # HEAD ("not on any branch"), which makes plain `gh pr comment` fail.
+  # Read the PR number from the event payload instead.
+  local repo="${GITHUB_REPOSITORY:-}"
+  local pr="${PR_NUMBER:-}"
+  if [[ -z "${pr}" && -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]]; then
+    pr=$(python3 -c 'import json, os; e = json.load(open(os.environ["GITHUB_EVENT_PATH"])); print((e.get("pull_request") or e.get("issue") or {}).get("number", ""))')
+  fi
+  # The comment is advisory: warn instead of failing the job. Fork PRs run
+  # with a read-only token that even a permissions block cannot elevate.
+  if [[ -n "${pr}" && -n "${repo}" ]]; then
+    if ! gh pr comment "${pr}" --repo "${repo}" --body "${BODY}"; then
+      echo "::warning::eval-bridge-pr-comment: could not post the comment (token needs pull-requests: write; fork PRs always get read-only)"
+    fi
+  else
+    if ! gh pr comment --body "${BODY}"; then
+      echo "::warning::eval-bridge-pr-comment: could not post the comment (could not resolve the PR number)"
+    fi
+  fi
+}
+
+gh_post_comment

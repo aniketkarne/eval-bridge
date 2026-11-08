@@ -1,7 +1,7 @@
 {
   "trace_id": "smoke-schema",
   "prompt": "Return JSON with an integer field 'answer' set to 42",
-  "model": "gpt-4o-mini",
+  "model": "gpt-6-luna",
   "fixture_response": "{\"answer\": 42}",
   "schema": {
     "type": "object",

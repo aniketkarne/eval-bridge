@@ -31,7 +31,7 @@ def test_import_otel_writes_one_fixture_per_llm_span(tmp_path: Path) -> None:
             "attributes": {
                 "gen_ai.prompt": "What is 2+2?",
                 "gen_ai.completion": "4",
-                "gen_ai.request.model": "gpt-4o-mini",
+                "gen_ai.request.model": "gpt-6-luna",
             },
             "start_time": "2026-01-01T00:00:00Z",
         },
@@ -167,7 +167,7 @@ def test_import_langfuse_writes_one_fixture_per_record(tmp_path: Path) -> None:
         "observations": [{
             "id": "obs-1",
             "type": "GENERATION",
-            "model": "gpt-4o-mini",
+            "model": "gpt-6-luna",
             "input": "Hello?",
             "output": "World!",
         }],
@@ -258,7 +258,7 @@ def test_import_langfuse_preserves_capture_metadata(tmp_path: Path) -> None:
             "type": "GENERATION",
             "input": "p",
             "output": "r",
-            "model": "gpt-4o-mini",
+            "model": "gpt-6-luna",
             "usage": {"totalTokens": 42},
             "totalCost": 0.0012,
         }],
