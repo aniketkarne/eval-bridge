@@ -107,7 +107,7 @@ def capture(
     scrubber = Scrubber(cfg.scrubber)
     data = _read_any(input_path)
 
-    scrubbed = scrubber.scrub_mapping(data)
+    scrubbed, scrub_counts = scrubber.scrub_mapping_with_counts(data)
     fixture = Fixture.from_dict(scrubbed)
     fixture.validate()
 
@@ -123,17 +123,15 @@ def capture(
         out = Path("tests/fixtures") / f"{fixture.trace_id}.json"
 
     payload = fixture.to_dict()
-    payload["scrubber_counts"] = list(scrubber.scrub(json.dumps(data)).counts.items())
+    payload["scrubber_counts"] = list(scrub_counts.items())
 
     if dry_run:
         click.echo(f"# dry-run: would write scrubbed fixture to {out}")
         click.echo(json.dumps(payload, indent=2, ensure_ascii=False))
         if mutate_n > 0:
             for v in mutate_fixture(fixture, n=mutate_n, seed=0):
-                vp = v.to_dict()
-                vp["scrubber_counts"] = list(
-                    scrubber.scrub(json.dumps(v.to_dict())).counts.items()
-                )
+                vp, vcounts = scrubber.scrub_mapping_with_counts(v.to_dict())
+                vp["scrubber_counts"] = list(vcounts.items())
                 click.echo()
                 click.echo(f"# variant {v.trace_id}:")
                 click.echo(json.dumps(vp, indent=2, ensure_ascii=False))
@@ -144,10 +142,8 @@ def capture(
 
     if mutate_n > 0:
         for v in mutate_fixture(fixture, n=mutate_n, seed=0):
-            vp = v.to_dict()
-            vp["scrubber_counts"] = list(
-                scrubber.scrub(json.dumps(v.to_dict())).counts.items()
-            )
+            vp, vcounts = scrubber.scrub_mapping_with_counts(v.to_dict())
+            vp["scrubber_counts"] = list(vcounts.items())
             v_out = out.with_name(f"{out.stem}.{v.trace_id.split('.')[-1]}{out.suffix}")
             _write_any(v_out, vp)
             click.echo(f"wrote {v_out}  (variant {v.trace_id})")
@@ -231,6 +227,7 @@ def run(
     }
 
     prior = load_baseline(baseline) if baseline is not None else None
+    hard_regression = False
     if prior is not None:
         diffs = diff_baseline(prior, snapshot)
         if diffs:
@@ -243,15 +240,30 @@ def run(
             # Only hard regressions/removals flip exit code; silent_regression
             # is reported loudly in stdout but does not fail the build.
             if any(d["kind"] in ("regressed", "removed") for d in diffs):
-                # Defer to the exit-on-fail block below if --no-exit-on-fail;
-                # otherwise propagate exit code 3.
-                if exit_on_fail:
-                    sys.exit(3)
+                hard_regression = True
+
+    # Resolve the exit code up front, but never exit here: the JUnit report
+    # and the summary below are the whole point of the command in CI, and
+    # they are needed most on the runs that fail.
+    exit_code = 0
+    if exit_on_fail:
+        if hard_regression:
+            exit_code = 3
+        elif report.failed > 0:
+            exit_code = 1
 
     if write_baseline_flag:
-        target = baseline if baseline is not None else (fixtures_dir / BASELINE_FILE)
-        write_baseline(target, snapshot)
-        console.print(f"baseline written: {target}")
+        if exit_code == 3:
+            err_console.print(
+                "[red]baseline not written: hard baseline regression (exit 3)[/red]"
+            )
+            err_console.print(
+                "    re-run with --no-exit-on-fail to accept the current output"
+            )
+        else:
+            target = baseline if baseline is not None else (fixtures_dir / BASELINE_FILE)
+            write_baseline(target, snapshot)
+            console.print(f"baseline written: {target}")
 
     # Pretty stdout summary
     table = Table(title="eval-bridge report")
@@ -277,8 +289,8 @@ def run(
         path = report.write_junit(junit)
         console.print(f"junit: {path}")
 
-    if exit_on_fail and report.failed > 0:
-        sys.exit(1)
+    if exit_code:
+        sys.exit(exit_code)
 
 
 # ---------------------------------------------------------------------------

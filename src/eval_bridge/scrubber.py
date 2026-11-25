@@ -286,21 +286,59 @@ class Scrubber:
         )
 
     def scrub_mapping(self, data: Mapping[str, Any]) -> dict[str, Any]:
-        """Recursively scrub every string leaf in *data*."""
-        out: dict[str, Any] = {}
-        for k, v in data.items():
-            out[k] = self._scrub_value(v)
+        """Recursively scrub every string leaf and string key in *data*."""
+        out, _ = self.scrub_mapping_with_counts(data)
         return out
 
-    def _scrub_value(self, v: Any) -> Any:
+    def scrub_mapping_with_counts(
+        self, data: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, int]]:
+        """Scrub *data* recursively; return the scrubbed copy and its counts.
+
+        The counts are the replacements actually made to the returned copy -
+        the same operation that produces the content a caller writes to disk.
+        Never derive counts from a serialization of the input instead: JSON
+        escaping changes what the patterns see (and dict keys appear in the
+        serialization but are not string leaves).
+
+        Keys are scrubbed like values - a PII-bearing key must not survive
+        into a committed fixture. When two keys scrub to the same
+        placeholder, deterministic suffixes keep both entries:
+        ``{email}``, ``{email}-2``, ...
+        """
+        counts: dict[str, int] = {}
+        return self._scrub_mapping(data, counts), counts
+
+    def _scrub_mapping(self, data: Mapping[str, Any], counts: dict[str, int]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for k, v in data.items():
+            new_k = k
+            if isinstance(k, str):
+                new_k = self._scrub_str(k, counts)
+                if new_k != k:
+                    base = new_k
+                    n = 2
+                    while new_k in out or new_k in data:
+                        new_k = f"{base}-{n}"
+                        n += 1
+            out[new_k] = self._scrub_value(v, counts)
+        return out
+
+    def _scrub_value(self, v: Any, counts: dict[str, int]) -> Any:
         if isinstance(v, str):
-            return self.scrub(v).text
+            return self._scrub_str(v, counts)
         if isinstance(v, Mapping):
-            return {k: self._scrub_value(x) for k, x in v.items()}
+            return self._scrub_mapping(v, counts)
         if isinstance(v, (list, tuple)):
-            scrubbed = [self._scrub_value(x) for x in v]
+            scrubbed = [self._scrub_value(x, counts) for x in v]
             return type(v)(scrubbed) if isinstance(v, tuple) else scrubbed
         return v
+
+    def _scrub_str(self, text: str, counts: dict[str, int]) -> str:
+        result = self.scrub(text)
+        for name, n in result.counts.items():
+            counts[name] = counts.get(name, 0) + n
+        return result.text
 
 
 # ---------------------------------------------------------------------------
